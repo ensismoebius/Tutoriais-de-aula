@@ -2,9 +2,34 @@
 
 Este material ensina React Native com Expo, sempre em JavaScript, do zero até um aplicativo completo de corrida — funcional, publicável, e construído inteiramente ao longo deste tutorial. Não é preciso ter visto nada de React Native antes: os fundamentos de JavaScript e React necessários aparecem logo nos primeiros tópicos.
 
-A ideia central é que você veja resultado rápido: já no início, com o projeto recém-criado, vamos colocar algo na tela em poucos minutos, e cada tópico novo termina com um pedaço a mais do mesmo app rodando de verdade no celular — nunca só teoria sem nada para testar. Cada tópico é organizado em **passos** — construa o código na ordem apresentada, um pedaço de cada vez, testando no celular ou no emulador a cada passo, em vez de copiar o arquivo inteiro de uma vez só.
+Já com o projeto recém-criado, o primeiro tópico coloca algo na tela, e cada tópico seguinte acrescenta um pedaço a mais do mesmo app, rodando no celular. Cada tópico é organizado em **passos** — construa o código na ordem apresentada, um pedaço de cada vez, testando no celular ou no emulador a cada passo, em vez de copiar o arquivo inteiro de uma vez só.
 
 > 💡 **Dica de organização:** nunca commite as pastas `node_modules/` e `.expo/` no Git — ambas são geradas automaticamente (a primeira por `npm install`, a segunda pelo próprio Expo) e mudam de máquina para máquina. E mantenha hooks reutilizáveis em `hooks/` ou `utils/` (como faremos com `useTracking`, `useAcelerometro`) em vez de escrever a lógica direto dentro do arquivo da tela — isso facilita testar a mesma lógica em mais de uma tela.
+
+**Sobre os nomes usados no código:** sempre que possível, nomes de variáveis, funções, componentes e constantes que **nós escolhemos** (`distanciaTotal`, `useTracking`, `assinaturaRef`, `CartaoDeRota`) aparecem em português neste tutorial. Nomes em inglês, por outro lado, quase sempre indicam algo que **vem de fora** — uma função, prop ou método definido pelo React, pelo Expo ou por alguma outra biblioteca (`useState`, `onPress`, `StyleSheet.create`, `getAllAsync`). Essa distinção é proposital: ao ler um trecho de código, o idioma do identificador já é uma pista de se aquele nome pode ser mudado livremente (é nosso) ou se precisa ser escrito exatamente daquele jeito, porque pertence a uma API externa (não é nosso, e renomear quebraria o código).
+
+### Por que frameworks multiplataforma existem
+
+**Objetivo:** entender o problema que o React Native resolve, e onde ele se encaixa comparado a desenvolvimento nativo.
+
+Construir um app nativo "puro" significa manter **duas bases de código completamente separadas**: uma em Kotlin (ou Java) para Android, outra em Swift (ou Objective-C) para iOS — cada tela, cada regra de negócio, cada correção de bug, escrita e testada duas vezes, em duas linguagens diferentes, por equipes que muitas vezes nem se falam.
+
+Um framework multiplataforma como o React Native resolve isso compartilhando **uma única base de código** em JavaScript, que roda nos dois sistemas — o que vamos construir ao longo deste tutorial funciona igual num Android e num iPhone, sem duplicar nada. A troca não é de graça: parte do controle de baixíssimo nível que o nativo puro oferece desde o primeiro dia fica, no React Native, atrás de uma camada de abstração (os módulos do Expo, que usaremos o tutorial inteiro). Para a grande maioria dos apps — os chamados "apps de negócio", com telas, listas, formulários, mapas, câmera — essa troca compensa amplamente a velocidade de desenvolvimento ganha; para o pequeno grupo de apps que dependem de algo extremamente específico de uma plataforma (processamento de áudio em tempo real, por exemplo), o nativo puro ainda tem seu lugar.
+
+Comparando os elementos mais básicos entre os dois mundos, para dar uma ideia concreta do que "uma camada de abstração" significa na prática:
+
+| Nativo (Android/Kotlin) | React Native |
+|---|---|
+| `TextView` | `<Text>` |
+| `LinearLayout` | `<View style={{ flexDirection: ... }}>` |
+| Duas bases de código (Kotlin + Swift) | Uma base compartilhada |
+| Acesso a 100% das APIs do sistema operacional desde o primeiro dia | Acesso via módulos do Expo (cobre a grande maioria dos casos de uso) |
+
+Cada linha dessa tabela vai aparecer na prática ao longo do tutorial: `<Text>` e `<View>` já apareceram no primeiro app rodando, a seguir; e o "acesso via módulos do Expo" é exatamente o que os tópicos de localização, sensores, câmera e notificações vão explorar — cada um desses recursos nativos chega até o JavaScript through um módulo Expo, não por acesso direto à API do sistema operacional.
+
+**Exercício:** pesquise rapidamente sobre o Flutter (o principal concorrente do React Native, mantido pelo Google, que usa Dart em vez de JavaScript) e monte uma tabela de prós/contras comparando os dois — em que tipo de projeto cada um tende a ser a escolha mais natural?
+
+---
 
 ### Ferramentas do projeto — criar, resetar e manter
 
@@ -99,13 +124,15 @@ npm install
 
 Isso reinstala tudo, resolvendo as versões de cada dependência de novo, sem carregar nenhum resquício de uma instalação anterior. `package-lock.json` guarda exatamente qual versão de cada dependência (inclusive as dependências das dependências) foi instalada da última vez — apagá-lo junto com `node_modules/` faz o `npm install` recalcular essas versões do zero a partir das faixas de versão declaradas em `package.json`, em vez de apenas repetir o que já estava travado no lock file.
 
-**Passo 8 — `npx expo start` e `npx expo start --clear`**
+**Passo 8 — o que é o Metro, e `npx expo start`/`npx expo start --clear`**
+
+**Metro** é o *bundler* (empacotador) de JavaScript usado pelo React Native — o programa que pega todos os seus arquivos `.js`/`.jsx`, mais os de cada dependência instalada, e os transforma em um único pacote de código que o celular consegue executar. Ele faz isso seguindo a árvore de `import`s a partir do ponto de entrada do app: começa em `expo-router/entry`, abre cada arquivo importado, entende quais outros arquivos aquele arquivo importa, e repete até ter mapeado tudo o que o app realmente usa (foi exatamente esse processo que rodamos manualmente na verificação deste tutorial, com `npx expo export`, contando quantos "módulos" o Metro conseguiu empacotar sem erro). Enquanto o projeto está em desenvolvimento, o Metro também fica de olho nos arquivos: ao salvar um deles, ele reprocessa só o que mudou e manda a atualização para o celular na hora (é isso que torna o Fast Refresh possível), em vez de reempacotar o projeto inteiro a cada salvamento. Para acelerar esse trabalho, o Metro guarda um **cache** de resultados de transformações já feitas — cache esse que, ocasionalmente, fica desatualizado ou corrompido (mudou uma configuração, um pacote nativo novo foi instalado) e precisa ser limpo manualmente, o que nos leva ao segundo comando abaixo.
 
 ```bash
 npx expo start
 ```
 
-Inicia o servidor de desenvolvimento (o Metro bundler) e mostra o QR code para abrir o app no celular via Expo Go, além de atalhos de teclado (`r` para recarregar, `a`/`i` para abrir num emulador). É o comando que fica rodando durante todo o desenvolvimento.
+Inicia o servidor de desenvolvimento (o próprio Metro, rodando em modo servidor) e mostra o QR code para abrir o app no celular via Expo Go, além de atalhos de teclado (`r` para recarregar, `a`/`i` para abrir num emulador). É o comando que fica rodando durante todo o desenvolvimento.
 
 ```bash
 npx expo start --clear
@@ -123,9 +150,9 @@ Faz a mesma coisa, mas primeiro **limpa o cache do Metro** antes de iniciar. Use
 1. Por que `npx create-expo-app` usa `npx`, e não `npm install create-expo-app` seguido de rodar o comando instalado?
 2. Qual é a diferença entre uma CLI e um SDK — por que `expo` é uma CLI, e as bibliotecas `expo-location`/`expo-sqlite` fazem parte de um SDK?
 
-### Seu primeiro app — resultado em minutos
+### Seu primeiro app
 
-**Objetivo:** sair do projeto recém-criado direto para algo rodando no seu celular, sem enrolação — e entender a sintaxe `StyleSheet` que vamos usar em toda tela deste tutorial.
+**Objetivo:** sair do projeto recém-criado direto para algo rodando no seu celular, e entender a sintaxe `StyleSheet` que vamos usar em toda tela deste tutorial.
 
 **Passo 1 — a primeira tela**
 
@@ -159,11 +186,23 @@ Escaneie o QR code exibido no terminal com o app **Expo Go** (Android) ou a câm
 
 **Por que `StyleSheet.create`, e não só um objeto comum**
 
-Repare que `styles` não é um objeto `{ container: {...}, titulo: {...} }` qualquer usado direto — ele passa por `StyleSheet.create(...)`. Isso funciona diferente de CSS na web: não existe cascata nem seletor, cada componente recebe seu próprio objeto de estilo via prop `style`, com propriedades parecidas com CSS mas em `camelCase` (`backgroundColor`, não `background-color`) e sem unidade (`16`, não `"16px"` — o número já é interpretado em pixels de densidade independente). `StyleSheet.create` existe por dois motivos:
+Repare que `styles` não é um objeto `{ container: {...}, titulo: {...} }` qualquer usado direto — ele passa por `StyleSheet.create(...)`. Isso funciona diferente de CSS na web: não existe cascata nem seletor, cada componente recebe seu próprio objeto de estilo via prop `style`, com propriedades parecidas com CSS mas em `camelCase` (`backgroundColor`, não `background-color`) e sem unidade (`16`, não `"16px"` — o número já é interpretado em pixels de densidade independente).
+
+**O que são "pixels de densidade independente"**
+
+Celulares diferentes têm densidades de tela bem diferentes — o mesmo espaço físico (por exemplo, 1 centímetro) pode corresponder a 300 pixels reais em um aparelho e a 450 em outro mais denso. Se o React Native usasse pixels reais diretamente, um `fontSize: 16` ficaria visivelmente menor em um aparelho de tela mais densa do que em outro — o mesmo número de pixels reais ocupa menos espaço físico quanto mais denso for o painel. Um **pixel de densidade independente** (também chamado de `dp` ou `dip`) é uma unidade que já leva essa densidade em conta: o sistema converte esse número para a quantidade certa de pixels reais em cada aparelho, de forma que `fontSize: 16` pareça do mesmo tamanho físico em qualquer tela, densa ou não. Por isso, todo número usado em `StyleSheet.create` (`16`, `flex: 1`, `padding: 8`) é sempre density-independent, nunca pixel real — e é também por isso que não existe unidade nenhuma depois do número, diferente do `"16px"` do CSS: no React Native, "pixel" já significa, por padrão, esse pixel independente de densidade.
+
+`StyleSheet.create` existe por dois motivos:
 - **Valida em tempo de desenvolvimento.** Uma propriedade inexistente ou um valor de tipo errado gera um aviso imediato, em vez de silenciosamente não fazer nada.
 - **Evita recriar o objeto a cada renderização.** Um objeto `{ flex: 1 }` escrito direto dentro do `return` é recriado do zero toda vez que o componente renderiza de novo; com `StyleSheet.create`, o objeto é criado uma única vez (fora do componente, como `styles` acima) e reaproveitado.
 
 Também é possível passar um objeto comum direto em `style={{ flex: 1 }}` — funciona, e vamos usar essa forma para estilos muito pequenos e pontuais ao longo do tutorial — mas para os estilos de uma tela inteira, `StyleSheet.create` no fim do arquivo (como fizemos acima) é o padrão que vamos seguir sempre.
+
+**Por que não dá para usar um arquivo `.css` comum**
+
+O Expo também consegue exportar um app para rodar no navegador (`npx expo export --platform web`), e nesse alvo específico existe uma engine de CSS de verdade por baixo — é por isso que, pesquisando por aí, é possível encontrar exemplos de projeto Expo com um arquivo `.css` importado e uma prop `className`, e aquilo parecer funcionar. O problema é que isso só funciona **no navegador**. No Android e no iOS não existe HTML, não existe DOM, e não existe motor nenhum de CSS rodando por trás — o React Native não desenha `<div>`s que um navegador depois estiliza; ele traduz cada `<View>`/`<Text>` diretamente em um componente de interface nativo do sistema operacional (`UIView` no iOS, `ViewGroup`/`View` no Android). Não existe nada ali para interpretar um seletor CSS ou um arquivo `.css` — essas plataformas simplesmente não sabem o que fazer com eles.
+
+O sistema `style`/`StyleSheet` existe justamente para funcionar **igual nas três plataformas**: o mesmo `styles.container` do topo deste tópico roda sem alteração nenhuma no Android, no iOS e na Web, porque ele nunca dependeu de CSS — sempre foi um objeto JavaScript comum, interpretado pelo próprio React Native (ou pelo `react-native-web`, no caso do navegador) para desenhar a tela. Usar `.css`/`className` amarra parte do código só ao alvo Web, quebrando o mesmo código nos outros dois. Por isso, ao longo deste tutorial, todo estilo é escrito com `style`/`StyleSheet.create`, mesmo quando o app também for exportado para a Web.
 
 **Exercícios:**
 - **Fácil:** Mude a cor e o tamanho do texto em `styles.titulo`, salve, e veja a tela atualizar sozinha (Fast Refresh) sem precisar reiniciar `npx expo start`.
@@ -366,8 +405,12 @@ Rode `npx expo start` de novo (ou deixe rodando e salve o arquivo) e toque no bo
 
 **O que é um hook?** É uma função especial do React, sempre com nome começando em `use` (`useState`, `useEffect`, `useRouter`, e os hooks próprios que vamos construir ao longo deste tutorial, como `useTracking`), que dá a um componente acesso a recursos do React — guardar um valor entre renderizações, reagir a mudanças, ler o contexto de navegação, etc. — sem precisar transformar esse componente em uma classe (o jeito antigo de fazer a mesma coisa, hoje raramente usado).
 
-Hooks só podem ser chamados em dois lugares: direto no corpo de um componente, ou dentro de outro hook (é assim que `useTracking`, no Tópico 5, usa `useState` e `useRef` por baixo dos panos). Duas regras simples valem para todos eles:
-- **Sempre no topo da função**, nunca dentro de `if`, `for` ou depois de um `return` — o React identifica cada hook pela ordem em que são chamados, então chamá-los condicionalmente bagunça essa ordem entre uma renderização e outra.
+**Por que um hook é diferente de uma função comum**
+
+Uma função JavaScript comum não tem memória própria: toda vez que ela é chamada, começa do zero, sem lembrar de nada da chamada anterior — é por isso que uma variável declarada dentro dela (`let x = 0`) volta a `0` a cada nova chamada, nunca acumula nada entre uma execução e a próxima. Um hook quebra essa regra de propósito: por baixo dos panos, o React associa cada chamada de hook a uma "posição" fixa dentro daquele componente específico, e guarda o valor daquele hook nessa posição, entre uma renderização e outra — é assim que `useState` consegue lembrar o valor de `contador` mesmo depois do componente inteiro ter sido chamado de novo (lembre-se: renderizar é só chamar a função do componente de novo, como vimos na seção de "Fundamentos de JavaScript"). Uma função comum não tem onde guardar esse tipo de memória; um hook tem, porque o React reserva esse espaço para ele.
+
+É exatamente essa "posição fixa" que explica a regra mais estranha dos hooks — a de nunca chamá-los dentro de um `if`. Hooks só podem ser chamados em dois lugares: direto no corpo de um componente, ou dentro de outro hook (é assim que `useTracking`, no Tópico 5, usa `useState` e `useRef` por baixo dos panos). Duas regras simples valem para todos eles:
+- **Sempre no topo da função**, nunca dentro de `if`, `for` ou depois de um `return` — o React não identifica cada hook pelo nome da variável nem por nenhum identificador explícito, e sim pela **ordem** em que são chamados dentro do componente, a cada renderização. Se a primeira renderização chama `useState` e depois `useEffect`, mas uma renderização seguinte pula o `useState` por causa de um `if`, o React associa o valor errado de memória ao `useEffect` seguinte — a ordem das posições fica toda desalinhada. Uma função comum não tem esse problema porque não guarda memória nenhuma entre chamadas; um hook tem, e é exatamente essa memória que a ordem fixa protege.
 - **O nome sempre denuncia o que ele faz**: quando você criar seu próprio hook (como veremos em vários tópicos deste tutorial), comece o nome com `use` — é assim que tanto o React quanto quem lê seu código reconhece que aquela função segue essas regras.
 
 Os exemplos deste tutorial usam os hooks `useState` e `useEffect` (ambos vêm prontos do React) o tempo todo, então vale revisar rapidamente o papel de cada um antes de seguir em frente.
@@ -406,6 +449,27 @@ function TelaExemplo({ usuarioId }) {
 ```
 
 Uma lista de dependências vazia (`[]`, como em vários exemplos deste tutorial) significa "rode só uma vez, quando o componente aparecer na tela pela primeira vez".
+
+**`useRef`** guarda um valor entre renderizações, igual `useState` — mas com uma diferença essencial: **mudar um ref não faz o componente renderizar de novo**. Ele devolve um único objeto, sempre o mesmo a cada renderização, com uma propriedade `.current` que você lê e escreve livremente:
+
+```javascript
+import { useRef } from 'react';
+
+const contadorDeCliques = useRef(0);
+
+function aoClicar() {
+  contadorDeCliques.current = contadorDeCliques.current + 1;
+  console.log(contadorDeCliques.current); // já mostra o valor novo
+  // mas a tela não é redesenhada por causa dessa linha
+}
+```
+
+**Quando usar `useRef` em vez de `useState`:** sempre que um valor precisa **persistir** entre renderizações, mas **não deve aparecer na tela** — ou seja, mudá-lo não deveria disparar um redesenho. Ao longo deste tutorial, `useRef` aparece em três situações que se repetem:
+- **Guardar um identificador para cancelar algo depois** — `assinaturaRef`, no Tópico 5, guarda a assinatura do GPS só para poder chamar `.remove()` nela mais tarde, dentro de `parar()`. O próprio valor da assinatura nunca precisa aparecer na interface.
+- **Guardar uma referência a um componente nativo, para chamar um método nele** — `webviewRef`, no Tópico 5, guarda uma referência à `WebView` para poder chamar `injectJavaScript` nela diretamente, por fora do ciclo normal de renderização.
+- **Controlar algo "por trás dos panos", sem exibir esse controle na tela** — `pontosEnviadosRef`, também no Tópico 5, guarda quantos pontos já foram enviados ao mapa; e `ultimaChacoalhada`, no Tópico 6, guarda o instante da última detecção, só para calcular o intervalo até a próxima. Se qualquer um desses dois virasse `useState`, cada atualização causaria uma renderização inteira só para atualizar um número que ninguém vê na tela.
+
+Repare que, diferente de `useState`, mudar um ref é feito **mutando `.current` diretamente** (`assinaturaRef.current = valor`), sem uma função `setAlgumaCoisa` — a regra de imutabilidade da seção de Fundamentos de JavaScript vale para **estado** (`useState`/`useReducer`), não para refs, exatamente porque um ref nunca aciona a comparação que o React faz para decidir se redesenha o componente.
 
 **Por que declarar com `const` sempre que possível:** ao longo de todo o tutorial, a maioria das variáveis é declarada com `const`, e não com `let` ou `var`. `const` impede que a variável seja reatribuída depois — se você tentar fazer `contador = 5` mais adiante no código (em vez de usar `setContador`), o JavaScript já aponta o erro na hora, em vez de deixar passar um bug para ser descoberto só depois, ao rodar o app. Isso também deixa o código mais fácil de ler: quem vê um `const` já sabe que aquele valor não muda depois de criado, sem precisar ler o resto da função para ter certeza. Reserve `let` só para os poucos casos em que a variável realmente precisa ser reatribuída (como o `i` de um `for`, ou o `soma` acumulado em `distanciaTotal`, no Tópico 3).
 
@@ -449,8 +513,8 @@ Nem tudo precisa virar um componente separado, mas alguns sinais indicam que val
 Por exemplo, o item de uma lista de rotas planejadas — a mesma lista que vamos construir no Passo 2 a seguir — pode viver dentro da própria tela, ou ser extraído assim, se o cartão crescer (com distância estimada, ícone, última vez que foi percorrida):
 
 ```javascript
-// components/CardRota.jsx
-function CardRota({ rota, onPress }) {
+// components/CartaoDeRota.jsx
+function CartaoDeRota({ rota, onPress }) {
   return (
     <TouchableOpacity onPress={onPress}>
       <Text>{rota.nome}</Text>
@@ -462,7 +526,7 @@ function CardRota({ rota, onPress }) {
 
 **Onde colocar cada componente**
 
-Seguindo a convenção adotada desde o início deste tutorial: componentes usados por **uma tela só** ficam no próprio arquivo daquela tela, dentro de `app/`; componentes reutilizados por **mais de uma tela** (como `CardRota` acima, ou `AvisoPermissaoNegada`, que construímos no Tópico 4) vão para `components/`, com um arquivo por componente, nomeado igual ao componente (`AvisoPermissaoNegada.jsx` exporta `AvisoPermissaoNegada`). É a mesma lógica de organização que já aplicamos a hooks (`hooks/`, `utils/`) desde o início deste tutorial.
+Seguindo a convenção adotada desde o início deste tutorial: componentes usados por **uma tela só** ficam no próprio arquivo daquela tela, dentro de `app/`; componentes reutilizados por **mais de uma tela** (como `CartaoDeRota` acima, ou `AvisoPermissaoNegada`, que construímos no Tópico 4) vão para `components/`, com um arquivo por componente, nomeado igual ao componente (`AvisoPermissaoNegada.jsx` exporta `AvisoPermissaoNegada`). É a mesma lógica de organização que já aplicamos a hooks (`hooks/`, `utils/`) desde o início deste tutorial.
 
 **Passo 1 — o que é um layout, e o que é um Stack**
 
@@ -1024,7 +1088,7 @@ export function useTracking() {
   const [pontos, setPontos] = useState([]);
   const [rastreando, setRastreando] = useState(false);
   const [erro, setErro] = useState(null);
-  const subscriptionRef = useRef(null); // vai guardar a assinatura do GPS, para poder cancelar depois
+  const assinaturaRef = useRef(null); // vai guardar a assinatura do GPS, para poder cancelar depois
 }
 ```
 
@@ -1044,7 +1108,7 @@ Agora adicione a função `iniciar`. A diferença para uma leitura pontual de lo
     setPontos([]);
     setRastreando(true);
 
-    subscriptionRef.current = await Location.watchPositionAsync(
+    assinaturaRef.current = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
         timeInterval: 3000,   // a cada 3 segundos
@@ -1063,8 +1127,8 @@ Sem cancelar a assinatura, o GPS continuaria sendo lido mesmo depois que o usuá
 
 ```javascript
   function parar() {
-    subscriptionRef.current?.remove();
-    subscriptionRef.current = null;
+    assinaturaRef.current?.remove();
+    assinaturaRef.current = null;
     setRastreando(false);
   }
 
@@ -1082,7 +1146,7 @@ O mapa em si é uma página HTML com Leaflet, carregada dentro de uma `WebView`.
 
 ```javascript
 // utils/mapaHtml.js
-export function getMapaCorridaHtml(latitudeInicial, longitudeInicial) {
+export function obterMapaCorridaHtml(latitudeInicial, longitudeInicial) {
   return `
 <!DOCTYPE html>
 <html>
@@ -1106,7 +1170,7 @@ export function getMapaCorridaHtml(latitudeInicial, longitudeInicial) {
     var rota = L.polyline([], { color: '#2196F3', weight: 4 }).addTo(map);
     var marcador = null;
 
-    window.addPonto = function (lat, lon) {
+    window.adicionarPonto = function (lat, lon) {
       var ponto = [lat, lon];
       rota.addLatLng(ponto);
       if (marcador) {
@@ -1136,7 +1200,7 @@ Repare no final do script: assim que o Leaflet termina de montar o mapa, ele avi
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { getMapaCorridaHtml } from '../utils/mapaHtml';
+import { obterMapaCorridaHtml } from '../utils/mapaHtml';
 
 const REGIAO_INICIAL = { latitude: -23.5505, longitude: -46.6333 };
 
@@ -1144,11 +1208,11 @@ export function RaceMap({ pontos }) {
   const webviewRef = useRef(null);
   const [mapaPronto, setMapaPronto] = useState(false);
 
-  // useState com função: getMapaCorridaHtml só roda na primeira renderização,
+  // useState com função: obterMapaCorridaHtml só roda na primeira renderização,
   // não a cada re-render — senão o HTML seria recriado (e a WebView recarregada)
   // toda vez que "pontos" mudasse.
   const [htmlInicial] = useState(() =>
-    getMapaCorridaHtml(REGIAO_INICIAL.latitude, REGIAO_INICIAL.longitude)
+    obterMapaCorridaHtml(REGIAO_INICIAL.latitude, REGIAO_INICIAL.longitude)
   );
 
   return (
@@ -1173,7 +1237,7 @@ Nesse ponto o mapa já aparece na tela, mas ainda não recebe os pontos do rastr
 
 **Passo 6 — atualizar o trajeto sem recarregar a página**
 
-Recarregar a `WebView` a cada ponto novo apagaria a linha desenhada até então. Em vez disso, injetamos JavaScript no mapa já carregado, chamando o `window.addPonto` que definimos no Passo 4. Para isso, primeiro adicione mais uma ref no topo do componente, junto da `webviewRef` já existente — ela vai lembrar quantos pontos já foram enviados ao mapa:
+Recarregar a `WebView` a cada ponto novo apagaria a linha desenhada até então. Em vez disso, injetamos JavaScript no mapa já carregado, chamando o `window.adicionarPonto` que definimos no Passo 4. Para isso, primeiro adicione mais uma ref no topo do componente, junto da `webviewRef` já existente — ela vai lembrar quantos pontos já foram enviados ao mapa:
 
 ```javascript
   const pontosEnviadosRef = useRef(0);
@@ -1191,7 +1255,7 @@ Agora adicione este efeito logo abaixo, antes do `return` do componente:
     for (let i = pontosEnviadosRef.current; i < pontos.length; i++) {
       const { latitude, longitude } = pontos[i];
       webview.injectJavaScript(
-        `window.addPonto && window.addPonto(${latitude}, ${longitude}); true;`
+        `window.adicionarPonto && window.adicionarPonto(${latitude}, ${longitude}); true;`
       );
     }
     pontosEnviadosRef.current = pontos.length;
@@ -1222,10 +1286,10 @@ export default function Corrida() {
 **Exercícios:**
 - **Fácil:** Mostre na tela quantos pontos já foram registrados (`pontos.length`).
 - **Médio:** Importe `distanciaTotal` de `utils/calculos.js` (construída no Tópico 3) para somar a distância total do trajeto em `pontos` e exibi-la ao lado do botão.
-- **Desafio:** Adicione um botão "Reiniciar" que limpa `pontos` e também limpa a linha desenhada no mapa (dica: envie um `window.resetRota()` parecido com o `window.addPonto`, apagando `rota` e `marcador` dentro do HTML do Passo 4).
+- **Desafio:** Adicione um botão "Reiniciar" que limpa `pontos` e também limpa a linha desenhada no mapa (dica: envie um `window.reiniciarRota()` parecido com o `window.adicionarPonto`, apagando `rota` e `marcador` dentro do HTML do Passo 4).
 
 **Perguntas para fixação:**
-1. Por que `getMapaCorridaHtml` é chamado dentro de `useState(() => ...)`, e não direto como `useState(getMapaCorridaHtml(...))`?
+1. Por que `obterMapaCorridaHtml` é chamado dentro de `useState(() => ...)`, e não direto como `useState(obterMapaCorridaHtml(...))`?
 2. O que aconteceria com o desenho do trajeto se, em vez de `injectJavaScript`, recarregássemos a `WebView` a cada novo ponto?
 
 ---
@@ -1266,13 +1330,13 @@ const ROTAS_PLANEJADAS = [
 ];
 ```
 
-E exiba a imagem no `CardRota` (Tópico 1):
+E exiba a imagem no `CartaoDeRota` (Tópico 1):
 
 ```javascript
-// components/CardRota.jsx
+// components/CartaoDeRota.jsx
 import { Image } from 'expo-image';
 
-function CardRota({ rota, onPress }) {
+function CartaoDeRota({ rota, onPress }) {
   return (
     <TouchableOpacity onPress={onPress}>
       <Image source={rota.imagemUrl} style={{ width: 60, height: 60, borderRadius: 8 }} contentFit="cover" />
@@ -1285,7 +1349,7 @@ function CardRota({ rota, onPress }) {
 
 **Passo 3 — tocando um som com `expo-audio`**
 
-Para efeitos sonoros curtos (um apito ao iniciar a corrida, por exemplo), `expo-audio` expõe o hook `useAudioPlayer`, que recebe a origem do som (também aceita `require(...)` para um arquivo local) e devolve um player pronto para tocar:
+Para efeitos sonoros curtos (um apito ao iniciar a corrida, por exemplo), `expo-audio` expõe o hook `useAudioPlayer`, que recebe a origem do som (também aceita `require(...)` para um arquivo local) e devolve um tocador pronto para usar:
 
 ```javascript
 // app/corrida.jsx — trecho
@@ -1294,14 +1358,14 @@ import { useAudioPlayer } from 'expo-audio';
 const somDeApito = require('../assets/sons/apito.mp3');
 
 export default function Corrida() {
-  const player = useAudioPlayer(somDeApito);
+  const tocador = useAudioPlayer(somDeApito);
   // ...
 }
 ```
 
 **Passo 4 — tocar o som ao iniciar e ao parar**
 
-Adicione um arquivo de áudio curto em `assets/sons/apito.mp3` (qualquer efeito sonoro curto serve) e chame `player.play()` dentro das próprias funções `iniciar`/`parar` do `useTracking` (Tópico 5), ou diretamente na tela, envolvendo a chamada existente:
+Adicione um arquivo de áudio curto em `assets/sons/apito.mp3` (qualquer efeito sonoro curto serve) e chame `tocador.play()` dentro das próprias funções `iniciar`/`parar` do `useTracking` (Tópico 5), ou diretamente na tela, envolvendo a chamada existente:
 
 ```javascript
 // app/corrida.jsx
@@ -1314,11 +1378,11 @@ const somDeApito = require('../assets/sons/apito.mp3');
 
 export default function Corrida() {
   const { pontos, rastreando, erro, iniciar, parar } = useTracking();
-  const player = useAudioPlayer(somDeApito);
+  const tocador = useAudioPlayer(somDeApito);
 
   function iniciarComSom() {
-    player.seekTo(0);
-    player.play();
+    tocador.seekTo(0);
+    tocador.play();
     iniciar();
   }
 
@@ -1332,7 +1396,7 @@ export default function Corrida() {
 }
 ```
 
-`player.seekTo(0)` garante que o som toque do início toda vez, mesmo que a corrida anterior tenha tocado o mesmo apito há pouco.
+`tocador.seekTo(0)` garante que o som toque do início toda vez, mesmo que a corrida anterior tenha tocado o mesmo apito há pouco.
 
 **Exercícios:**
 - **Fácil:** Troque as URLs de `imagemUrl` por imagens de verdade (pode ser qualquer imagem hospedada publicamente), e confirme que aparecem nos cards da lista.
@@ -1385,7 +1449,7 @@ export function useAcelerometro(intervaloMs = 200) {
 Complete o `then`, e guarde a assinatura em uma variável para poder removê-la quando o componente sair da tela (senão o sensor continuaria sendo lido em segundo plano, gastando bateria):
 
 ```javascript
-    let subscription;
+    let assinatura;
 
     Accelerometer.isAvailableAsync().then((temSensor) => {
       if (cancelado) return;
@@ -1393,12 +1457,12 @@ Complete o `then`, e guarde a assinatura em uma variável para poder removê-la 
       if (!temSensor) return;
 
       Accelerometer.setUpdateInterval(intervaloMs);
-      subscription = Accelerometer.addListener(setDados);
+      assinatura = Accelerometer.addListener(setDados);
     });
 
     return () => {
       cancelado = true;
-      subscription?.remove();
+      assinatura?.remove();
     };
 ```
 
@@ -1414,7 +1478,7 @@ export function useAcelerometro(intervaloMs = 200) {
   const [disponivel, setDisponivel] = useState(false);
 
   useEffect(() => {
-    let subscription;
+    let assinatura;
     let cancelado = false;
 
     Accelerometer.isAvailableAsync().then((temSensor) => {
@@ -1423,12 +1487,12 @@ export function useAcelerometro(intervaloMs = 200) {
       if (!temSensor) return;
 
       Accelerometer.setUpdateInterval(intervaloMs);
-      subscription = Accelerometer.addListener(setDados);
+      assinatura = Accelerometer.addListener(setDados);
     });
 
     return () => {
       cancelado = true;
-      subscription?.remove();
+      assinatura?.remove();
     };
   }, [intervaloMs]);
 
@@ -1463,10 +1527,59 @@ export function useDetectorDeChacoalhada(aoChacoalhar, limiar = 2.5) {
 }
 ```
 
+**Passo 4 — vibração com `expo-haptics`**
+
+```bash
+npx expo install expo-haptics
+```
+
+Sacudir o celular durante a corrida não serve de nada se o app não confirmar que percebeu — quem está correndo não vai parar para olhar a tela. `expo-haptics` resolve isso com vibração tátil, e não pede permissão nenhuma para funcionar:
+
+```javascript
+import * as Haptics from 'expo-haptics';
+
+// padrões prontos de sucesso / aviso / erro — o mesmo que o próprio sistema usa em outros apps
+await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+// toque físico curto, para botões e outras interações diretas — de Light a Heavy
+await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+```
+
+**Passo 5 — sacudir marca um ponto de interesse, com vibração confirmando**
+
+Junte `useDetectorDeChacoalhada` e `Haptics.notificationAsync` na tela de rastreamento (Tópico 5), para que chacoalhar o celular durante a corrida marque um ponto de interesse no trajeto — só enquanto a corrida estiver de fato rodando:
+
+```javascript
+// app/corrida.jsx — acrescente aos imports já existentes
+import { useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { useDetectorDeChacoalhada } from '../utils/useDetectorDeChacoalhada';
+```
+
+```javascript
+// dentro do componente Corrida, junto dos outros hooks
+const [pontosDeInteresse, setPontosDeInteresse] = useState([]);
+
+useDetectorDeChacoalhada(() => {
+  if (!rastreando) return;
+
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  setPontosDeInteresse((anteriores) => [...anteriores, pontos.at(-1)]);
+});
+```
+
+O `if (!rastreando) return;` no início do callback é o que impede que sacudir o celular no bolso, antes de iniciar a corrida, marque pontos à toa. Mostre a contagem na tela, junto do botão de iniciar/parar:
+
+```javascript
+<Text>Pontos de interesse: {pontosDeInteresse.length}</Text>
+```
+
 **Exercícios:**
 - **Fácil:** Mostre `x`, `y`, `z` na tela em tempo real, arredondados para 2 casas decimais.
-- **Médio:** Use `useDetectorDeChacoalhada` na tela de rastreamento (Tópico 5) para que chacoalhar o celular durante a corrida marque um "ponto de interesse" no trajeto.
-- **Desafio:** Ajuste o `limiar` experimentalmente até encontrar um valor que detecte um chacoalhar intencional, mas ignore o balanço normal do celular no bolso durante a corrida.
+- **Médio:** Troque `Haptics.NotificationFeedbackType.Success` por `Haptics.ImpactFeedbackStyle.Heavy` (via `impactAsync`) e compare a sensação da vibração entre os dois.
+- **Desafio:** Ajuste o `limiar` de `useDetectorDeChacoalhada` experimentalmente até encontrar um valor que detecte um chacoalhar intencional, mas ignore o balanço normal do celular no bolso durante a corrida.
+
+**Pergunta para fixação:** por que `Haptics.notificationAsync`/`impactAsync` não exigem nenhum pedido de permissão, diferente de câmera, contatos ou localização?
 
 ---
 
@@ -1753,6 +1866,255 @@ Note a semelhança com o reducer do Passo 1 — a diferença é que o Redux Tool
 
 ---
 
+### Autenticação e Proteção de Telas
+
+**Objetivo:** adicionar login ao app, guardando o token de acesso com segurança, e proteger as telas de corrida para que só um usuário autenticado consiga abri-las.
+
+**Autenticar** é confirmar quem o usuário é — normalmente pedindo e-mail/senha e recebendo de volta um **token**, um código que passa a representar aquele usuário logado em cada requisição seguinte, sem precisar enviar a senha de novo. **Proteger uma tela** é a etapa seguinte: decidir, antes mesmo de desenhar aquela tela, se o usuário atual tem um token válido — e mandá-lo para o login caso não tenha.
+
+**Passo 1 — instale o `expo-secure-store`**
+
+```bash
+npx expo install expo-secure-store
+```
+
+O `AsyncStorage`, usado no Tópico 7 para a unidade de distância preferida, guarda os dados em texto puro — aceitável para uma preferência sem valor nenhum se vazada, mas não para um token de acesso. `expo-secure-store` guarda a informação criptografada, usando o Keychain do iOS ou o Keystore do Android por baixo dos panos — por isso é a escolha certa especificamente para credenciais e tokens.
+
+**Passo 2 — um utilitário de armazenamento seguro, com um detalhe para a Web**
+
+`expo-secure-store` não existe na Web (não há Keychain/Keystore em navegador) — por isso, sempre que o app também rodar na Web, é preciso desviar para outra forma de guardar o token ali, como o `localStorage` do próprio navegador:
+
+```javascript
+// utils/armazenamentoSeguro.js
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+
+const CHAVE_TOKEN = 'corrida_token';
+
+export async function salvarTokenSeguro(token) {
+  if (Platform.OS === 'web') {
+    localStorage.setItem(CHAVE_TOKEN, token);
+    return;
+  }
+  await SecureStore.setItemAsync(CHAVE_TOKEN, token);
+}
+
+export async function lerTokenSeguro() {
+  if (Platform.OS === 'web') {
+    return localStorage.getItem(CHAVE_TOKEN);
+  }
+  return SecureStore.getItemAsync(CHAVE_TOKEN);
+}
+
+export async function apagarTokenSeguro() {
+  if (Platform.OS === 'web') {
+    localStorage.removeItem(CHAVE_TOKEN);
+    return;
+  }
+  await SecureStore.deleteItemAsync(CHAVE_TOKEN);
+}
+```
+
+**Passo 3 — o `AuthContext`, no mesmo padrão do Tópico 9**
+
+Assim como `CorridaContext` compartilha o estado da corrida com qualquer tela, `AuthContext` compartilha o token e as funções de entrar/sair — sem precisar passá-los por prop:
+
+```javascript
+// context/AuthContext.jsx
+import { createContext, useContext, useEffect, useState } from 'react';
+import { lerTokenSeguro, salvarTokenSeguro, apagarTokenSeguro } from '../utils/armazenamentoSeguro';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+
+  // ao abrir o app, verifica se já existe um token salvo de uma sessão anterior
+  useEffect(() => {
+    lerTokenSeguro().then((tokenSalvo) => {
+      setToken(tokenSalvo);
+      setCarregando(false);
+    });
+  }, []);
+
+  async function entrar(email, senha) {
+    const resposta = await fetch('https://reqres.in/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: senha }),
+    });
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(dados.error ?? 'Falha no login.');
+    }
+
+    await salvarTokenSeguro(dados.token);
+    setToken(dados.token);
+  }
+
+  async function sair() {
+    await apagarTokenSeguro();
+    setToken(null);
+  }
+
+  return (
+    <AuthContext.Provider value={{ token, carregando, entrar, sair }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+```
+
+`reqres.in` é uma API pública gratuita, feita justamente para testar telas de login — `eve.holt@reqres.in`/`cityslicka` é uma das combinações de teste documentadas por ela, e devolve um token de verdade. Note que `entrar` **lança** um erro (`throw`) em vez de tratá-lo ali dentro — quem chama `entrar` (a tela de login, no Passo 5) é quem decide como mostrar esse erro para o usuário.
+
+**Passo 4 — a tela de login**
+
+```javascript
+// app/login.jsx
+import { useState } from 'react';
+import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
+import { useAuth } from '../context/AuthContext';
+
+export default function Login() {
+  const { entrar } = useAuth();
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function aoEntrar() {
+    setErro(null);
+    setCarregando(true);
+    try {
+      await entrar(email, senha);
+    } catch (erroDeLogin) {
+      setErro(erroDeLogin.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Entrar</Text>
+      <TextInput style={styles.input} placeholder="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" />
+      <TextInput style={styles.input} placeholder="Senha" value={senha} onChangeText={setSenha} secureTextEntry />
+      <Button title={carregando ? 'Entrando...' : 'Entrar'} onPress={() => aoEntrar()} disabled={carregando} />
+      {erro && <Text style={styles.erro}>{erro}</Text>}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+  titulo: { fontSize: 24, fontWeight: 'bold' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10 },
+  erro: { color: '#c62828' },
+});
+```
+
+Teste com `eve.holt@reqres.in` / `cityslicka` — e depois com uma senha qualquer errada, para confirmar que a mensagem de erro aparece.
+
+**Passo 5 — agrupe as telas que exigem login**
+
+O Expo Router protege rotas **em grupo**, não tela por tela. Crie uma pasta `app/(app)/` — o nome entre parênteses agrupa rotas sem aparecer na URL, o mesmo mecanismo já usado em `app/(tabs)/` no Tópico 1 — e mova para dentro dela **todas as telas já existentes, exceto `app/login.jsx`**: `index.jsx`, `cep.jsx`, `corrida.jsx`, `historico.jsx`, `compartilhar.jsx`, `concorrencia.jsx` e a pasta `rotas/` inteira. Como o nome do grupo não entra na URL, nenhuma chamada a `router.push` feita em tópicos anteriores precisa mudar — `router.push('/corrida')` continua abrindo `app/(app)/corrida.jsx` normalmente.
+
+O grupo precisa do próprio `_layout.jsx`, com um `Stack` normal:
+
+```javascript
+// app/(app)/_layout.jsx
+import { Stack } from 'expo-router';
+
+export default function AppLayout() {
+  return <Stack />;
+}
+```
+
+**Passo 6 — proteja o grupo no layout raiz, com `Stack.Protected`**
+
+`Stack.Protected` decide, com base em uma condição (`guard`), se um `Stack.Screen` fica disponível para navegação ou não — se o usuário estiver em uma tela que deixou de estar disponível, o Expo Router já redireciona sozinho para a primeira tela disponível:
+
+```javascript
+// app/_layout.jsx
+import { Stack } from 'expo-router';
+import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import * as Notifications from 'expo-notifications';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { CorridaProvider } from '../context/CorridaContext';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const queryClient = new QueryClient();
+
+function NavegacaoRaiz() {
+  const { token, carregando } = useAuth();
+
+  if (carregando) return null; // ainda checando se já existe um token salvo
+
+  return (
+    <Stack>
+      <Stack.Protected guard={!!token}>
+        <Stack.Screen name="(app)" options={{ headerShown: false }} />
+      </Stack.Protected>
+
+      <Stack.Protected guard={!token}>
+        <Stack.Screen name="login" />
+      </Stack.Protected>
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <CorridaProvider>
+          <NavegacaoRaiz />
+        </CorridaProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+Repare na ordem dos dois `Stack.Protected`: o primeiro só fica disponível com `token` preenchido (usuário logado); o segundo, só sem `token` (usuário deslogado) — nunca os dois ao mesmo tempo. Assim que `entrar()` preenche o `token` (Passo 3), o grupo `(app)` passa a existir e o Expo Router já leva o usuário para lá sozinho, sem nenhum `router.push` manual saindo da tela de login.
+
+**Passo 7 — um botão de sair**
+
+Adicione, em `app/(app)/index.jsx`, um botão que chama `sair()` do `AuthContext` — assim que o `token` for apagado, `Stack.Protected` reage e devolve o usuário para o login automaticamente:
+
+```javascript
+import { useAuth } from '../../context/AuthContext';
+
+// dentro do componente da tela
+const { sair } = useAuth();
+
+<Button title="Sair" onPress={() => sair()} />
+```
+
+**Exercícios:**
+- **Fácil:** Tente digitar uma senha errada na tela de login e confirme que a mensagem de erro aparece, sem o app travar nem navegar para lugar nenhum.
+- **Médio:** Depois de fazer login, feche o app completamente (não só minimizar) e abra de novo — confirme que ele volta direto para dentro de `(app)`, sem pedir login de novo, graças ao `token` salvo no Passo 1.
+- **Desafio:** Troque a tela de "Carregando..." (`if (carregando) return null`) por um indicador visual de verdade, usando `ActivityIndicator` do `react-native`.
+
+**Perguntas para fixação:**
+1. Por que o token fica em `expo-secure-store`, e não em `AsyncStorage`, como a unidade de distância preferida do Tópico 7?
+2. Se o usuário apertar "Sair" enquanto estiver na tela `corrida`, o que faz o Expo Router tirá-lo de lá e mandá-lo para o login, já que nenhum código chamou `router.push('/login')` manualmente?
+
+---
+
 ### 10. Publicação de Apps (builds, lojas)
 
 **Objetivo:** sair do Expo Go e gerar um build de verdade, pronto para as lojas.
@@ -1803,28 +2165,33 @@ Repare que nenhum tópico deste tutorial ficou isolado: cada um acrescentou uma 
 
 ```
 app/
-  index.jsx                       — primeira tela rodando (seção "Seu primeiro app")
-  _layout.jsx                     — Stack raiz (Tópico 1); é aqui que entram o
-                                     CorridaProvider (Tópico 9) e o
+  _layout.jsx                     — Stack raiz com Stack.Protected (seção Autenticação); é aqui
+                                     que entram o AuthProvider, o CorridaProvider (Tópico 9) e o
                                      setNotificationHandler (Tópico 8)
-  (tabs)/_layout.jsx              — alternativa em abas para o layout raiz (Tópico 1, opcional)
-  cep.jsx                         — consulta de CEP, primeiro exemplo de Promise/async-await
+  login.jsx                       — tela de login, fora do grupo protegido (seção Autenticação)
+  (app)/
+    _layout.jsx                   — Stack do grupo protegido (seção Autenticação)
+    index.jsx                     — primeira tela rodando, com botão "Sair" (seção "Seu primeiro
+                                     app" + Autenticação)
+    cep.jsx                       — consulta de CEP, primeiro exemplo de Promise/async-await
                                      (seção "Promises, async/await e funções assíncronas")
-  rotas/
-    index.jsx                     — lista de rotas planejadas, com imagens (Tópico 1 + Mídia)
-    [id].jsx                      — detalhe da rota, com botão "Iniciar corrida" (Tópico 1)
-  corrida.jsx                     — tela de rastreamento em tempo real, com mapa e som de apito
-                                     (Tópico 5 + Mídia)
-  historico.jsx                   — corridas salvas, lidas do SQLite (Tópico 7)
-  compartilhar.jsx                — compartilhar um resultado com os contatos (Tópico 4)
-  concorrencia.jsx                — comparação bloqueante x em lotes x InteractionManager (Tópico 3)
+    rotas/
+      index.jsx                   — lista de rotas planejadas, com imagens (Tópico 1 + Mídia)
+      [id].jsx                    — detalhe da rota, com botão "Iniciar corrida" (Tópico 1)
+    corrida.jsx                   — tela de rastreamento em tempo real, com mapa, som de apito
+                                     e vibração ao marcar ponto de interesse (Tópico 5 + Mídia + Tópico 6)
+    historico.jsx                 — corridas salvas, lidas do SQLite (Tópico 7)
+    compartilhar.jsx              — compartilhar um resultado com os contatos (Tópico 4)
+    concorrencia.jsx              — comparação bloqueante x em lotes x InteractionManager (Tópico 3)
+  (tabs)/_layout.jsx              — alternativa em abas para o layout do grupo (Tópico 1, opcional)
 
 components/
-  CardRota.jsx                    — item da lista de rotas, com imagem (Tópico 1 + Mídia)
+  CartaoDeRota.jsx                — item da lista de rotas, com imagem (Tópico 1 + Mídia)
   RaceMap.jsx                     — WebView + Leaflet exibindo o trajeto (Tópico 5)
   AvisoPermissaoNegada.jsx        — aviso reutilizável de permissão negada (Tópico 4)
 
 context/
+  AuthContext.jsx                 — AuthProvider/useAuth: token, entrar, sair (seção Autenticação)
   CorridaContext.jsx              — CorridaProvider/useCorrida, ou o equivalente em Redux Toolkit (Tópico 9)
 
 hooks/
@@ -1838,11 +2205,9 @@ utils/
   useAcelerometro.js              — leitura do acelerômetro (Tópico 6)
   useDetectorDeChacoalhada.js     — detecta chacoalhar o celular durante a corrida (Tópico 6)
   preferencias.js                 — unidade de distância preferida, via AsyncStorage (Tópico 7)
+  armazenamentoSeguro.js          — token via expo-secure-store, com fallback de localStorage
+                                     na Web (seção Autenticação)
 
 assets/
   sons/apito.mp3                  — efeito sonoro tocado ao iniciar a corrida (Mídia)
 ```
-
-**Como as peças se encaixam:** desde a primeira seção deste tutorial (`app/index.jsx` rodando em minutos) até aqui, cada tópico acrescentou uma peça ao mesmo aplicativo. O usuário abre o app e vê a lista de rotas planejadas, já com imagem de cada rota (Tópico 1 + Mídia); ao tocar em uma, cai na tela de detalhe e, de lá, em "Iniciar corrida", chega à tela de rastreamento (Tópico 5), que toca um apito (Mídia), desenha o trajeto ao vivo no mapa enquanto `useTracking` assina o GPS. Os mesmos `pontos` do rastreamento alimentam `distanciaTotal` (Tópico 3, cuidando para não travar a interface) e servem de coordenada para consultar o clima atual (Tópico 2, construído sobre os fundamentos de Promise/async-await de `app/cep.jsx`). Chacoalhar o celular durante a corrida marca um ponto de interesse no trajeto (Tópico 6). Ao terminar, o resultado pode ser compartilhado com um contato (Tópico 4), fica salvo no histórico local (Tópico 7) e pode disparar um lembrete para a próxima corrida (Tópico 8). O estado da corrida em andamento — em vez de ser repassado por prop de tela em tela — fica acessível de qualquer lugar via `useCorrida()` (Tópico 9). E, para sair do Expo Go e colocar esse app nas mãos de usuários de verdade, o Tópico 10 fecha o tutorial com o processo de build e publicação.
-
-Nenhum tópico precisa ser "encaixado" à força depois: a essa altura, seguir os passos de cada um, na ordem em que aparecem, já constrói o app inteiro.
