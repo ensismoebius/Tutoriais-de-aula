@@ -326,7 +326,7 @@ Com o app rodando, aperte `j` no terminal do `npx expo start`. Isso abre o **Rea
 **Passo 3 — disciplina de depuração, não só ferramentas**
 
 Ferramenta nenhuma substitui alguns hábitos básicos, já mencionados em dicas espalhadas pelo tutorial, reunidos aqui:
-- Sempre trate erros de `Promise` com `try/catch` (visto na seção de Promises) — um erro engolido em silêncio não aparece em lugar nenhum, nem no Console do DevTools.
+- Sempre trate erros de `Promise` com `try/catch` (visto na seção de Promises) — um erro pego sem aviso não aparece em lugar nenhum, nem no Console do DevTools.
 - `console.log` dentro do `<script>` de uma `WebView` (Tópico 5) não aparece no DevTools nem no terminal — é um ambiente JavaScript totalmente separado; a única ponte de volta é `postMessage`, como já vimos.
 - Depois de instalar um pacote novo ou editar `app.json`/`babel.config.js`, reinicie `npx expo start` (de preferência com `--clear`, visto na seção de Ferramentas) antes de assumir que o código está errado — muitas vezes o problema é só o Metro não ter recarregado a mudança de configuração.
 
