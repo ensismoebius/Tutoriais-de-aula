@@ -1,4 +1,4 @@
-# Apostila — Desenvolvimento de Sistemas (DS)
+# Tutorial — Desenvolvimento de Sistemas (DS)
 
 Linguagem de referência: Java.
 
@@ -364,7 +364,7 @@ class ContaBancariaTest {
 
 ### 14. Projeto Final — Início
 
-Aplicação de todo o conteúdo do semestre em um sistema desktop completo:
+Aplicação de todo o conteúdo do curso em um sistema desktop completo:
 1. Modelagem das classes de domínio (POO, herança/interfaces onde fizer sentido).
 2. Camada DAO com persistência real (JDBC).
 3. Camada Service com regras de negócio e tratamento de exceções customizadas.

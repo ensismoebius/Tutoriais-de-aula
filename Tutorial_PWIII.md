@@ -1,4 +1,4 @@
-# Apostila — Programação para Web III (PWIII)
+# Tutorial — Programação para Web III (PWIII)
 
 Linguagem/framework de referência: PHP (Laravel-like ORM) — conceitos aplicáveis a outros stacks.
 
@@ -268,7 +268,7 @@ Route::middleware('throttle:60,1')->group(function () {
 
 ### 12. Projeto Final — Início
 
-Aplicação de todo o conteúdo do semestre em uma API completa:
+Aplicação de todo o conteúdo do curso em uma API completa:
 1. Modelagem de recursos com ORM (migrations, models, relacionamentos).
 2. Endpoints REST completos para pelo menos 2 recursos.
 3. Autenticação via JWT protegendo rotas sensíveis.

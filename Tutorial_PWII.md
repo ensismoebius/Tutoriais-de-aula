@@ -1,4 +1,4 @@
-# Apostila — Programação para Web II (PWII)
+# Tutorial — Programação para Web II (PWII)
 
 Linguagem de referência: PHP.
 
@@ -372,7 +372,7 @@ function responderListar(ProdutoDAO $dao): void {
 
 ### 15. Projeto Final + Apresentações
 
-Aplicação de todo o conteúdo do semestre em um sistema web completo, seguindo MVC com DAO, autenticação por sessão, proteção contra SQL Injection/XSS, e ao menos uma funcionalidade via AJAX ou API JSON.
+Aplicação de todo o conteúdo do curso em um sistema web completo, seguindo MVC com DAO, autenticação por sessão, proteção contra SQL Injection/XSS, e ao menos uma funcionalidade via AJAX ou API JSON.
 
 **Checklist para a apresentação:**
 - Estrutura MVC clara (pastas `models`/`views`/`controllers`).

@@ -1,4 +1,4 @@
-# Apostila — Banco de Dados I (BDI)
+# Tutorial — Banco de Dados I (BDI)
 
 ### 1. Do DER para o Modelo Lógico
 
@@ -255,7 +255,7 @@ DELIMITER ;
 
 ### 13. Projeto Final — Início
 
-Momento de aplicar todo o conteúdo do semestre em um projeto de banco de dados completo:
+Momento de aplicar todo o conteúdo do curso em um projeto de banco de dados completo:
 1. Modelar o DER do domínio escolhido.
 2. Derivar o modelo lógico e criar as tabelas (com PKs, FKs e constraints).
 3. Popular as tabelas com dados de teste.
