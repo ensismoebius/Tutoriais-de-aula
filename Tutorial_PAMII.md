@@ -8,6 +8,36 @@ Já com o projeto recém-criado, o primeiro tópico coloca algo na tela, e cada 
 
 **Sobre os nomes usados no código:** sempre que possível, nomes de variáveis, funções, componentes e constantes que **nós escolhemos** (`distanciaTotal`, `useTracking`, `assinaturaRef`, `CartaoDeRota`) aparecem em português neste tutorial. Nomes em inglês, por outro lado, quase sempre indicam algo que **vem de fora** — uma função, prop ou método definido pelo React, pelo Expo ou por alguma outra biblioteca (`useState`, `onPress`, `StyleSheet.create`, `getAllAsync`). Essa distinção é proposital: ao ler um trecho de código, o idioma do identificador já é uma pista de se aquele nome pode ser mudado livremente (é nosso) ou se precisa ser escrito exatamente daquele jeito, porque pertence a uma API externa (não é nosso, e renomear quebraria o código).
 
+## Sumário
+
+- [Por que frameworks multiplataforma existem](#por-que-frameworks-multiplataforma-existem)
+- [Ferramentas do projeto — criar, resetar e manter](#ferramentas-do-projeto-criar-resetar-e-manter)
+- [Seu primeiro app](#seu-primeiro-app)
+- [Personalizando o ícone e a tela de abertura (splash screen)](#personalizando-o-ícone-e-a-tela-de-abertura-splash-screen)
+- [Depurando o app (debugging)](#depurando-o-app-debugging)
+- [Verificação de plataforma (`Platform.OS`)](#verificação-de-plataforma-platformos)
+- [Fundamentos de JavaScript para React](#fundamentos-de-javascript-para-react)
+- [Revisão — hooks, useState, useEffect e const](#revisão-hooks-usestate-useeffect-e-const)
+- [1. Componentes e Navegação no Framework](#1-componentes-e-navegação-no-framework)
+- [Promises, async/await e funções assíncronas](#promises-asyncawait-e-funções-assíncronas)
+- [2. Consumo de APIs no Framework](#2-consumo-de-apis-no-framework)
+- [Criando sua própria API (Node.js/Express) e autenticação com JWT](#criando-sua-própria-api-nodejsexpress-e-autenticação-com-jwt)
+- [3. Concorrência e Threads](#3-concorrência-e-threads)
+- [4. Permissões Avançadas](#4-permissões-avançadas)
+- [5. Localização e Mapas](#5-localização-e-mapas)
+- [Mídia — imagens, sons e outros arquivos](#mídia-imagens-sons-e-outros-arquivos)
+- [Animações com Reanimated](#animações-com-reanimated)
+- [6. Acesso a Recursos Nativos via Framework](#6-acesso-a-recursos-nativos-via-framework)
+- [Chamando código nativo (Kotlin/Java) a partir do React Native](#chamando-código-nativo-kotlinjava-a-partir-do-react-native)
+- [7. Armazenamento Local no Framework](#7-armazenamento-local-no-framework)
+- [Gráficos — em tempo real e estáticos](#gráficos-em-tempo-real-e-estáticos)
+- [8. Notificações](#8-notificações)
+- [9. Gerenciamento de Estado (Context API, Redux)](#9-gerenciamento-de-estado-context-api-redux)
+- [Autenticação e Proteção de Telas](#autenticação-e-proteção-de-telas)
+- [Menu de navegação (Drawer) — acesso a todas as telas](#menu-de-navegação-drawer-acesso-a-todas-as-telas)
+- [10. Publicação de Apps (builds, lojas)](#10-publicação-de-apps-builds-lojas)
+- [Projeto completo — todos os arquivos juntos](#projeto-completo-todos-os-arquivos-juntos)
+
 ### Por que frameworks multiplataforma existem
 
 **Objetivo:** entender o problema que o React Native resolve, e onde ele se encaixa comparado a desenvolvimento nativo.
@@ -209,6 +239,104 @@ O sistema `style`/`StyleSheet` existe justamente para funcionar **igual nas trê
 - **Médio:** Adicione um segundo `<Text>` como subtítulo, com seu próprio estilo em `styles`.
 - **Desafio:** Tente colocar uma propriedade CSS que não existe em React Native (por exemplo, `float: 'left'`) em `styles.container` dentro de `StyleSheet.create` e observe o aviso que aparece — depois remova e confirme que o app volta ao normal.
 
+### Personalizando o ícone e a tela de abertura (splash screen)
+
+**Objetivo:** trocar o ícone genérico do Expo (e a tela branca que pisca ao abrir o app) pela identidade visual do seu próprio app — tudo configurado num único lugar, `app.json`.
+
+**Passo 1 — onde cada coisa é configurada**
+
+Tanto o ícone quanto a splash screen são controlados por `app.json`, não por código React. O ícone tem uma entrada simples (`icon`) mais uma versão específica para Android (`android.adaptiveIcon`); a splash é configurada como opções do plugin `expo-splash-screen`, já presente por padrão em todo projeto criado com `create-expo-app`:
+
+```json
+// app.json — trecho
+{
+  "expo": {
+    "icon": "./assets/images/icon.png",
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2196F3",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2196F3",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160
+        }
+      ]
+    ]
+  }
+}
+```
+
+**Passo 2 — o ícone: um arquivo simples, e a versão adaptativa do Android**
+
+`icon` é o caminho mais direto: um único PNG quadrado (pelo menos 1024×1024, sem partes transparentes essenciais — em telas antigas do Android ele pode aparecer sem nenhum recorte especial) usado como ícone genérico (Web e, quando nenhuma opção mais específica existe, iOS também).
+
+Desde o Android 8, porém, o sistema não usa um ícone único — ele monta um **ícone adaptativo** a partir de até três camadas separadas, todas do mesmo tamanho (1024×1024) mas com papéis diferentes:
+- **`foregroundImage`** — só o desenho/logo em si, com fundo **transparente**. O sistema recorta essa camada em formatos diferentes (círculo, "squircle", quadrado com cantos arredondados...) dependendo do fabricante do aparelho — por isso o desenho precisa caber numa **zona segura** central, cerca de 65% do canvas; qualquer coisa mais perto da borda pode ser cortada dependendo do aparelho.
+- **`backgroundImage`** (ou, mais simples, só `backgroundColor`) — o que fica atrás do desenho. Uma cor sólida, como usamos aqui, funciona bem e é a opção mais simples.
+- **`monochromeImage`** — uma versão de **uma cor só** do mesmo desenho, com fundo transparente. É usada pelos "ícones temáticos" do Android 13+ (quando o usuário ativa cores dinâmicas no sistema) — o próprio Android tinge essa camada com a cor do tema do usuário, então ela precisa ser só o desenho, sem nenhuma cor própria.
+
+**Passo 3 — a splash screen**
+
+A splash é mais simples: uma imagem central (`image`, tipicamente só o logo/símbolo, sem o fundo — o `backgroundColor` da própria configuração já preenche o resto da tela) e `imageWidth`, a largura em pixels de densidade independente (o mesmo conceito visto lá em "Seu primeiro app") em que essa imagem deve aparecer na tela — não precisa bater com o tamanho do arquivo fonte, que pode (e deve) ser maior, para não ficar borrado em telas de alta densidade.
+
+**Passo 4 — por que o Expo Go não mostra nada disso**
+
+Esse é o detalhe que mais confunde quem está vendo isso pela primeira vez: **o Expo Go sempre mostra o próprio ícone e a própria splash do Expo Go**, nunca os do seu projeto — faz sentido, já que o Expo Go é um app só, capaz de abrir qualquer projeto, e o ícone dele fica fixo na tela inicial do celular independentemente de qual projeto você abrir por dentro. Ícone e splash **customizados só aparecem num build de verdade** — o mesmo tipo gerado com `npx expo run:android` (visto lá em "Chamando código nativo") ou com `eas build`, no tópico de Publicação. Rode `npx expo run:android` depois de trocar essas imagens e confira o ícone novo na gaveta de apps do celular, e a splash na primeira tela que aparece ao abrir.
+
+**Exercícios:**
+- **Fácil:** Troque `backgroundColor` da splash e do `adaptiveIcon` por outra cor, rode `npx expo run:android` de novo e confirme a mudança tanto na splash quanto no ícone.
+- **Médio:** Gere as quatro imagens (`icon.png`, `android-icon-foreground.png`, `android-icon-background.png`, `android-icon-monochrome.png`) a partir de uma arte própria — qualquer editor de imagem serve, desde que exporte PNG com fundo transparente nas camadas que precisam dele.
+- **Desafio:** Depois de publicado ao menos um build de preview (Tópico 10), troque o ícone de novo e gere um novo build — note que o ícone antigo continua na tela inicial do celular até você desinstalar e reinstalar o app; diferente do JavaScript (atualizado via Fast Refresh ou OTA), ícone e splash exigem uma reinstalação para atualizar.
+
+**Pergunta para fixação:** por que a camada `monochromeImage` do ícone adaptativo não pode ter cor própria, ao contrário de `foregroundImage`?
+
+### Depurando o app (debugging)
+
+**Objetivo:** conhecer as ferramentas que mostram o que está acontecendo por trás da tela — antes de precisar delas de verdade, num bug real.
+
+**Passo 1 — o menu de desenvolvedor**
+
+Com o app aberto (Expo Go ou um development build), abra o **menu de desenvolvedor**: aperte `m` no terminal onde `npx expo start` está rodando, ou agite o celular fisicamente (Android), ou toque a tela com três dedos (iOS). Ele traz, entre outras opções:
+
+- **Reload** — recarrega o app do zero (raramente necessário, já que o Fast Refresh atualiza sozinho a maior parte das mudanças).
+- **Toggle performance monitor** — mostra, em tempo real, uso de RAM, memória heap do JavaScript (ajuda a notar vazamentos de memória) e quadros por segundo (FPS) separados por thread de UI e thread JS — os mesmos dois "lados" que discutimos no Tópico de Concorrência.
+- **Toggle element inspector** — sobrepõe a tela com a árvore de componentes; tocar em qualquer elemento mostra suas props e estilos aplicados, útil para descobrir por que um espaçamento está errado sem precisar adivinhar.
+- **Open DevTools** — abre o React Native DevTools, o assunto do próximo passo.
+
+**Passo 2 — React Native DevTools**
+
+Com o app rodando, aperte `j` no terminal do `npx expo start`. Isso abre o **React Native DevTools** — uma ferramenta parecida com o DevTools do Chrome, mas conectada diretamente ao JavaScript do seu app, com abas de Console, Sources, Network e Memory, além de Components e Profiler (herdadas do React DevTools).
+
+- **Console** — o mesmo `console.log` que já usamos o tutorial inteiro aparece aqui, mas a aba também é um terminal interativo: dá para digitar qualquer expressão JavaScript e ela roda no contexto atual do app.
+- **Sources** — clique num número de linha para colocar um **breakpoint**; quando a execução chegar ali, o app inteiro pausa (não trava — pausa mesmo, esperando você inspecionar) e você pode ver o valor de cada variável naquele exato momento. O mesmo efeito acontece escrevendo a palavra `debugger;` em qualquer linha do código.
+- **Pause on exceptions** — ative essa opção (no painel do Sources) para que o app pause automaticamente assim que um erro for lançado, mesmo que algum componente (como o Expo Router) acabe capturando esse erro depois — sem isso, um erro tratado silenciosamente nunca chega a aparecer.
+- **Network** (só em apps Expo) — mostra cada `fetch`/`axios` feito pelo app, com status, tempo de resposta e corpo da requisição/resposta — útil para depurar exatamente os `fetch` que construímos nos tópicos de Promises e Consumo de APIs, sem precisar espalhar `console.log` em cada um.
+
+**Passo 3 — disciplina de depuração, não só ferramentas**
+
+Ferramenta nenhuma substitui alguns hábitos básicos, já mencionados em dicas espalhadas pelo tutorial, reunidos aqui:
+- Sempre trate erros de `Promise` com `try/catch` (visto na seção de Promises) — um erro engolido em silêncio não aparece em lugar nenhum, nem no Console do DevTools.
+- `console.log` dentro do `<script>` de uma `WebView` (Tópico 5) não aparece no DevTools nem no terminal — é um ambiente JavaScript totalmente separado; a única ponte de volta é `postMessage`, como já vimos.
+- Depois de instalar um pacote novo ou editar `app.json`/`babel.config.js`, reinicie `npx expo start` (de preferência com `--clear`, visto na seção de Ferramentas) antes de assumir que o código está errado — muitas vezes o problema é só o Metro não ter recarregado a mudança de configuração.
+
+**Exercícios:**
+- **Fácil:** Coloque um breakpoint dentro de `adicionarFavorito` (seção anterior) usando a aba Sources, toque no botão, e inspecione o valor de `proximoId` no momento da pausa.
+- **Médio:** Ative "Pause on exceptions", force um erro de propósito (por exemplo, chame uma função que não existe), e observe o app pausar exatamente na linha do erro.
+- **Desafio:** Abra a aba Network do DevTools enquanto testa a tela de CEP (seção de Promises) e confirme visualmente o corpo da resposta de uma consulta bem-sucedida e de uma malsucedida.
+
+**Pergunta para fixação:** por que um `console.log` colocado dentro do HTML de uma `WebView` não aparece nem no terminal do Metro nem no React Native DevTools, mesmo os dois rodando no mesmo processo do app?
+
 ### Verificação de plataforma (`Platform.OS`)
 
 **Objetivo:** ajustar código e estilo conforme o app está rodando no Android, no iOS ou na Web — usando a própria tela do Passo anterior como exemplo.
@@ -286,7 +414,37 @@ Na prática, usamos lambdas o tempo todo como **callbacks** — funções passad
 
 Uma lambda escrita direto onde é usada, como nesses dois exemplos, nem precisa de nome — ela existe só para aquele uso específico, exatamente como as funções passadas para `.then()`, `.map()` e `useEffect()` que já apareceram até aqui.
 
-**Passo 2 — import com e sem chaves, `export` e `export default`**
+**Passo 2 — desestruturação (destructuring)**
+
+"Desestruturar" é extrair valores de dentro de um array ou objeto direto para variáveis separadas, numa única linha, em vez de acessar cada posição/campo manualmente:
+
+```javascript
+// sem desestruturar
+const resultado = useState(0);
+const contador = resultado[0];
+const setContador = resultado[1];
+
+// desestruturando um array — funciona porque useState devolve um array de 2 posições
+const [contador, setContador] = useState(0);
+```
+
+```javascript
+// sem desestruturar
+function Saudacao(props) {
+  return <Text>Olá, {props.nome}!</Text>;
+}
+
+// desestruturando um objeto — extrai só o campo "nome" das props recebidas
+function Saudacao({ nome }) {
+  return <Text>Olá, {nome}!</Text>;
+}
+```
+
+A diferença entre as duas formas acima é sintaticamente importante: desestruturar um **array** (como `useState` devolve) usa colchetes `[a, b]` e extrai **por posição** — o primeiro item vai para a primeira variável, não importa o nome dela. Desestruturar um **objeto** (como as props de um componente) usa chaves `{ a, b }` e extrai **por nome do campo** — `{ nome }` só funciona porque o objeto de props tem um campo chamado exatamente `nome`.
+
+Esse é o padrão por trás de quase toda função deste tutorial que recebe props (`{ rota, onPress }` em `CartaoDeRota`, `{ id, nome, distanciaEstimadaKm }` em `useLocalSearchParams()`) e por trás de todo `useState`/`useReducer` — vale reconhecer a sintaxe agora para não estranhá-la mais adiante.
+
+**Passo 3 — import com e sem chaves, `export` e `export default`**
 
 Um arquivo pode exportar de duas formas. **Export default** (no máximo um por arquivo) é o "produto principal" daquele arquivo:
 
@@ -317,7 +475,7 @@ import Tela, { algumaFuncaoAuxiliar } from './algumArquivo';
 
 Ao longo deste tutorial, cada tela em `app/` usa `export default` (é assim que o Expo Router identifica qual componente é a tela daquela rota), enquanto hooks e funções utilitárias em `hooks/`/`utils/` costumam usar export nomeado, para permitir importar só a função específica que uma tela precisa.
 
-**Passo 3 — imutabilidade e o operador spread**
+**Passo 4 — imutabilidade e o operador spread**
 
 React decide se um componente precisa renderizar de novo comparando se o valor guardado em `useState` **mudou de referência** — não se o conteúdo mudou. Isso significa que **mutar** um array ou objeto de estado diretamente (`array.push(item)`, `objeto.campo = valor`) não funciona como se espera: o conteúdo até muda, mas a referência continua a mesma, então o React pode nem perceber que algo mudou e não redesenhar a tela.
 
@@ -346,9 +504,9 @@ const usuarioAniversariante = { ...usuario, idade: usuario.idade + 1 };
 
 Essa é exatamente a forma usada em `setPontos((anteriores) => [...anteriores, posicao.coords])`, que vamos escrever de verdade dentro de `useTracking` mais adiante — e no reducer de estado global, mais para o fim do tutorial (`{ ...state, pontos: [...state.pontos, action.ponto] }`).
 
-**Passo 4 — juntando os três, em um app que já roda**
+**Passo 5 — juntando tudo, em um app que já roda**
 
-Vamos aplicar lambda, import/export e imutabilidade de uma vez, evoluindo a tela criada há pouco com uma lista simples de favoritos:
+Vamos aplicar lambda, desestruturação, import/export e imutabilidade de uma vez, evoluindo a tela criada há pouco com uma lista simples de favoritos:
 
 ```javascript
 // app/index.jsx
@@ -399,7 +557,8 @@ Rode `npx expo start` de novo (ou deixe rodando e salve o arquivo) e toque no bo
 
 **Perguntas para fixação:**
 1. Por que `pontos.push(novoPonto); setPontos(pontos);` não faz a tela atualizar, mesmo o array tendo o item novo de fato?
-2. Nas duas formas de export vistas no Passo 2, qual delas permite importar o valor com um nome diferente do original, sem precisar de `as`?
+2. Nas duas formas de export vistas no Passo 3, qual delas permite importar o valor com um nome diferente do original, sem precisar de `as`?
+3. `const [id, nome] = useLocalSearchParams();` funcionaria para ler os parâmetros de `app/rotas/[id].jsx` (Tópico 1) do mesmo jeito que `const { id, nome } = useLocalSearchParams();`? Por quê?
 
 ### Revisão — hooks, useState, useEffect e const
 
@@ -479,7 +638,7 @@ Quando `setContador` (ou qualquer outro `setAlgumaCoisa` vindo de `useState`) é
 
 Esse mecanismo tem três consequências práticas que valem a pena internalizar desde já, porque vão aparecer sem aviso o tutorial inteiro:
 
-- **Só `useState`/`useReducer` disparam nova renderização.** Alterar uma variável comum (`let x = 5; x = 6;`) ou mutar um objeto/array existente não faz o React perceber nada — é por isso que a imutabilidade (Passo 3 da seção anterior) não é só estilo, é o que faz a tela realmente atualizar.
+- **Só `useState`/`useReducer` disparam nova renderização.** Alterar uma variável comum (`let x = 5; x = 6;`) ou mutar um objeto/array existente não faz o React perceber nada — é por isso que a imutabilidade (Passo 4 da seção anterior) não é só estilo, é o que faz a tela realmente atualizar.
 - **Atualizações de estado dentro do mesmo evento são agrupadas (*batching*).** Chamar `setA(1)` e `setB(2)` seguidos, dentro do mesmo `onPress`, não causa duas renderizações separadas — o React espera o evento terminar e renderiza uma única vez com os dois valores já atualizados. Isso evita telas "piscando" com estados intermediários que o usuário nunca deveria ver.
 - **O valor de uma variável de estado dentro de uma função é sempre o da renderização em que aquela função foi criada** — nunca o mais atual "por fora". É por isso que `setContador(contador + 1)` chamado duas vezes seguidas soma só 1, não 2 (as duas chamadas enxergam o mesmo `contador` antigo); a forma seguraria seria `setContador((valorAtual) => valorAtual + 1)`, passando uma função em vez de um valor — o mesmo padrão já usado em `setPontos((anteriores) => [...anteriores, coords])`.
 
@@ -818,6 +977,140 @@ Repare que `isLoading` e `error` já vêm prontos — não precisamos declarar `
 - **Fácil:** Exiba `isLoading` como um texto "Carregando clima..." enquanto a consulta não termina.
 - **Médio:** Troque `app/cep.jsx` (construída na seção de Promises) para usar `useQuery` em vez de `fetch` manual, comparando a quantidade de código necessária.
 - **Desafio:** Use a opção `refetchInterval` do `useQuery` para atualizar o clima automaticamente a cada 60 segundos enquanto a tela estiver aberta.
+
+---
+
+### Criando sua própria API (Node.js/Express) e autenticação com JWT
+
+**Objetivo:** sair do lado de **consumir** uma API (tópico anterior) para o lado de **construir** uma — e proteger um endpoint dela com um token JWT, gerado e validado pelo próprio servidor.
+
+Esse servidor é um **projeto separado** do app Expo — mesma linguagem (JavaScript), mas outro `package.json`, outra pasta, rodando no computador (ou, mais adiante, na nuvem), não no celular. O mesmo passo a passo funciona igual com Python (Flask/FastAPI) ou PHP (visto em detalhe no tutorial de PWIII) — Express foi escolhido aqui só por já estarmos em JavaScript.
+
+**Passo 1 — criar o projeto do servidor**
+
+```bash
+mkdir servidor-rotas
+cd servidor-rotas
+npm init -y
+npm install express cors jsonwebtoken
+```
+
+**Passo 2 — um endpoint que devolve as rotas planejadas**
+
+Isso substitui o array `ROTAS_PLANEJADAS` fixo do Tópico 1 por dados vindos de um servidor de verdade:
+
+```javascript
+// servidor-rotas/index.js
+const express = require('express');
+const cors = require('cors');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const ROTAS_PLANEJADAS = [
+  { id: '1', nome: 'Volta do parque', distanciaEstimadaKm: 3.2 },
+  { id: '2', nome: 'Orla da praia', distanciaEstimadaKm: 5.8 },
+];
+
+app.get('/rotas', (req, res) => {
+  res.json(ROTAS_PLANEJADAS);
+});
+
+app.listen(3000, () => console.log('Servidor rodando em http://localhost:3000'));
+```
+
+```bash
+node index.js
+```
+
+**Passo 3 — o que é um JWT**
+
+JWT (**J**SON **W**eb **T**oken) é o formato de token mais comum para autenticação em APIs — vale esclarecer o nome porque é fácil confundi-lo com siglas parecidas: não é "secure web token" nem nenhuma outra variação, é especificamente **JSON Web Token**. Um JWT é uma string com três partes separadas por ponto (`cabecalho.payload.assinatura`), cada uma em Base64: o `payload` carrega dados sobre quem está autenticado (aqui, o e-mail) e uma validade; a `assinatura` é gerada com uma chave secreta que só o servidor conhece, e é o que garante que ninguém alterou o conteúdo do token no caminho — qualquer alteração no payload invalida a assinatura, e o servidor rejeita o token.
+
+**Passo 4 — gerar um JWT no login**
+
+```javascript
+// servidor-rotas/index.js — acrescente
+const jwt = require('jsonwebtoken');
+
+const SEGREDO = 'troque-isso-por-uma-variavel-de-ambiente-em-producao';
+
+app.post('/login', (req, res) => {
+  const { email, senha } = req.body;
+
+  if (email === 'atleta@exemplo.com' && senha === '123456') {
+    const token = jwt.sign({ email }, SEGREDO, { expiresIn: '1h' });
+    return res.json({ token });
+  }
+
+  res.status(401).json({ erro: 'E-mail ou senha inválidos.' });
+});
+```
+
+`jwt.sign(payload, segredo, opções)` monta e assina o token; `expiresIn: '1h'` já embute a validade no próprio payload, sem precisar de nenhuma lógica extra para expirar o token depois.
+
+**Passo 5 — proteger um endpoint, exigindo o token**
+
+```javascript
+// servidor-rotas/index.js — acrescente
+function exigirToken(req, res, next) {
+  const cabecalho = req.headers.authorization; // formato esperado: "Bearer <token>"
+  const token = cabecalho?.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ erro: 'Token não enviado.' });
+  }
+
+  try {
+    req.usuario = jwt.verify(token, SEGREDO);
+    next();
+  } catch {
+    res.status(401).json({ erro: 'Token inválido ou expirado.' });
+  }
+}
+
+app.post('/corridas', exigirToken, (req, res) => {
+  const { distancia, duracao } = req.body;
+  res.status(201).json({ mensagem: `Corrida de ${req.usuario.email} salva.`, distancia, duracao });
+});
+```
+
+`exigirToken` é um **middleware** — uma função que roda antes da rota de verdade (`app.post('/corridas', exigirToken, ...)`), e só chama `next()` (deixando a requisição seguir) se o token for válido. `jwt.verify` refaz a checagem de assinatura usando o mesmo `SEGREDO`; se o token foi alterado, expirou, ou nunca existiu, ele lança um erro — capturado pelo `catch`, que devolve `401` antes mesmo do código da rota `/corridas` rodar.
+
+**Passo 6 — chamando o servidor a partir do app**
+
+```javascript
+async function fazerLogin(email, senha) {
+  const resposta = await fetch('http://SEU_IP_LOCAL:3000/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, senha }),
+  });
+  const dados = await resposta.json();
+  return dados.token;
+}
+
+async function salvarCorridaNoServidor(token, distancia, duracao) {
+  await fetch('http://SEU_IP_LOCAL:3000/corridas', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ distancia, duracao }),
+  });
+}
+```
+
+**A pegadinha do `localhost` num celular físico:** `http://localhost:3000` funciona no navegador do computador (aponta para ele mesmo), mas **não funciona no celular** — ali, `localhost` aponta para o próprio celular, não para o computador rodando o servidor. Descubra o IP local do computador na mesma rede Wi-Fi (`ipconfig` no Windows, `ifconfig`/`ip addr` no Linux/macOS — algo como `192.168.0.x`) e use esse endereço no lugar de `SEU_IP_LOCAL`. Celular e computador precisam estar na **mesma rede Wi-Fi** para isso funcionar — a mesma exigência de rede que torna a opção `--tunnel` (seção de Ferramentas) útil quando essa condição não pode ser garantida.
+
+**Exercícios:**
+- **Fácil:** Rode `curl -X POST http://localhost:3000/login -H "Content-Type: application/json" -d '{"email":"atleta@exemplo.com","senha":"123456"}'` no terminal e confirme que um token volta na resposta.
+- **Médio:** Tente chamar `POST /corridas` sem o header `Authorization` (via `curl`, sem o `-H`) e confirme que o servidor responde `401`.
+- **Desafio:** Troque o array fixo `ROTAS_PLANEJADAS` do servidor por leitura/escrita num arquivo JSON local (com `fs.readFileSync`/`fs.writeFileSync`), para as rotas sobreviverem a um reinício do servidor.
+
+**Pergunta para fixação:** por que alterar manualmente o `payload` de um JWT (por exemplo, trocando o e-mail dentro dele) não funciona para "enganar" o servidor, mesmo sendo só texto em Base64, fácil de decodificar e reescrever?
 
 ---
 
@@ -1365,7 +1658,7 @@ export default function Corrida() {
 
 **Passo 4 — tocar o som ao iniciar e ao parar**
 
-Adicione um arquivo de áudio curto em `assets/sons/apito.mp3` (qualquer efeito sonoro curto serve) e chame `tocador.play()` dentro das próprias funções `iniciar`/`parar` do `useTracking` (Tópico 5), ou diretamente na tela, envolvendo a chamada existente:
+Adicione um arquivo de áudio curto em `assets/sons/apito.mp3` (qualquer efeito sonoro curto serve) e chame `tocador.play()` dentro das próprias funções `iniciar`/`parar` do `useTracking` (Tópico 5), ou diretamente na tela, envolvendo a chamada existente. O projeto de referência (seção "Projeto completo", mais adiante) usa um apito de verdade, recortado de uma gravação licenciada em CC BY-SA — veja `assets/sons/CREDITS.md` ali para a atribuição exigida pela licença caso você reaproveite o mesmo arquivo.
 
 ```javascript
 // app/corrida.jsx
@@ -1404,6 +1697,100 @@ export default function Corrida() {
 - **Desafio:** Troque a imagem remota do detalhe da rota (`app/rotas/[id].jsx`) por uma vinda de `require(...)`, empacotada localmente — compare o tempo de carregamento entre as duas abordagens, principalmente com a rede lenta.
 
 **Pergunta para fixação:** por que `require('../assets/sons/apito.mp3')` funciona para referenciar um arquivo local, mas não funcionaria se o caminho dentro do `require` fosse construído dinamicamente (por exemplo, `require('../assets/sons/' + nomeDoArquivo)`)?
+
+---
+
+### Animações com Reanimated
+
+**Objetivo:** animar a interface sem travar a tela — usando exatamente a ideia de *worklet*/thread de UI que fechou o tópico anterior.
+
+```bash
+npx expo install react-native-reanimated react-native-worklets
+```
+
+Nenhuma configuração extra é necessária — o plugin do Babel que o Reanimated precisa já vem configurado automaticamente pelo `babel-preset-expo` do projeto.
+
+**Por que não animar só com `useState`**
+
+Seria possível animar trocando um número em `useState` a cada quadro (60 vezes por segundo) e recalculando o estilo a cada renderização — mas cada `setState` agenda uma renderização inteira do componente na thread JS, exatamente o gargalo que vimos no Tópico de Concorrência. O Reanimated evita isso com o **shared value**: um valor que vive fora do ciclo normal de renderização do React, lido e escrito diretamente pela thread de UI, sem precisar re-renderizar o componente a cada mudança — é o mesmo tipo de *worklet* mencionado ali.
+
+**Passo 1 — um fade-in no mapa, quando ele terminar de carregar**
+
+O componente `RaceMap` (Tópico 5) já guarda `mapaPronto`, que vira `true` assim que o Leaflet termina de montar. Vamos usar esse mesmo estado para disparar um fade-in suave, em vez do mapa simplesmente aparecer de repente:
+
+```javascript
+// components/RaceMap.jsx — imports adicionais
+import { useEffect } from 'react';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+```
+
+```javascript
+  // dentro do componente RaceMap, junto dos outros estados
+  const opacidade = useSharedValue(0);
+
+  useEffect(() => {
+    if (mapaPronto) {
+      opacidade.value = withTiming(1, { duration: 400 });
+    }
+  }, [mapaPronto]);
+
+  const estiloAnimado = useAnimatedStyle(() => ({
+    opacity: opacidade.value,
+  }));
+```
+
+E troque o `return` para envolver a `WebView` num `Animated.View` que recebe o estilo animado:
+
+```javascript
+  return (
+    <Animated.View style={[styles.map, estiloAnimado]}>
+      <WebView
+        ref={webviewRef}
+        originWhitelist={['*']}
+        source={{ html: htmlInicial }}
+        style={styles.map}
+        onMessage={(evento) => {
+          if (evento.nativeEvent.data === 'pronto') setMapaPronto(true);
+        }}
+      />
+    </Animated.View>
+  );
+```
+
+Repare que `estiloAnimado` é lido dentro de `useAnimatedStyle`, uma função especial do Reanimated — ela roda como *worklet*, na thread de UI, então mudar `opacidade.value` anima o mapa mesmo que a thread JS esteja ocupada com outra coisa (como o cálculo de distância do Tópico 3).
+
+**Passo 2 — feedback ao tocar no botão de iniciar/parar**
+
+`withSpring` cria uma animação com efeito de mola, útil para feedback de toque. Aplique um leve encolhimento ao `Button` de iniciar/parar (Tópico 5) usando `Pressable` no lugar dele, já que `Button` não permite estilo customizado:
+
+```javascript
+// app/corrida.jsx — trecho
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { Pressable, Text } from 'react-native';
+
+const escala = useSharedValue(1);
+
+const estiloBotao = useAnimatedStyle(() => ({
+  transform: [{ scale: escala.value }],
+}));
+
+<Pressable
+  onPressIn={() => { escala.value = withSpring(0.92); }}
+  onPressOut={() => { escala.value = withSpring(1); }}
+  onPress={rastreando ? parar : iniciarComSom}
+>
+  <Animated.View style={estiloBotao}>
+    <Text>{rastreando ? 'Parar' : 'Iniciar'}</Text>
+  </Animated.View>
+</Pressable>
+```
+
+**Exercícios:**
+- **Fácil:** Troque a duração do fade-in do mapa para 1000ms e observe a diferença.
+- **Médio:** Anime também a lista de rotas planejadas (Tópico 1) com um fade-in ao carregar a tela, usando o mesmo padrão de `useSharedValue`/`withTiming`.
+- **Desafio:** Pesquise `withSequence` e `withRepeat` do Reanimated, e use-os para fazer o contador de pontos do trajeto (`pontos.length`, Tópico 5) pulsar brevemente toda vez que um novo ponto de GPS chegar.
+
+**Pergunta para fixação:** por que animar `opacidade.value` dentro de `useAnimatedStyle` não causa uma nova renderização do componente `RaceMap` a cada quadro da animação, diferente de animar um valor guardado em `useState`?
 
 ---
 
@@ -1583,6 +1970,123 @@ O `if (!rastreando) return;` no início do callback é o que impede que sacudir 
 
 ---
 
+### Chamando código nativo (Kotlin/Java) a partir do React Native
+
+**Objetivo:** entender quando vale a pena escrever código nativo, e como o **Expo Modules API** conecta uma função Kotlin ao JavaScript do app.
+
+> ✅ O módulo descrito abaixo foi gerado, prebuilado e **compilado de verdade** com `./gradlew :informacoes-do-dispositivo:compileDebugKotlin` (não precisa de Android Studio para esse passo — só do Android SDK e do JDK, que o próprio Gradle usa por trás). O único lado que este tutorial não cobre é iOS/Swift (deixado como Desafio) — esse, sim, exigiria um Mac com Xcode.
+
+Todo módulo que usamos até aqui (`expo-location`, `expo-sqlite`, `expo-haptics`...) é, por baixo dos panos, código nativo (Kotlin no Android, Swift no iOS) com uma API em JavaScript por cima. A imensa maioria dos apps nunca precisa escrever esse código nativo diretamente — mas quando o app precisa de algo **muito específico**, sem nenhum módulo Expo ou biblioteca pronta que cubra (um SDK proprietário de terceiros que só existe em Kotlin, por exemplo), o caminho é escrever esse pedaço nativo você mesmo e expô-lo ao JavaScript.
+
+**Passo 1 — criar um módulo local**
+
+```bash
+npx create-expo-module@latest --local informacoes-do-dispositivo
+```
+
+Esse comando pergunta, um de cada vez: o nome do módulo (`InformacoesDoDispositivo`), uma descrição, o nome do pacote Android (`expo.modules.informacoesdodispositivo`), autor, licença, versão inicial, quais plataformas (`android`, já que este tutorial não cobre a parte de iOS/Swift) e quais exemplos de recurso incluir no template (`Function` é o suficiente aqui). Para automatizar isso num script (ou repetir exatamente a mesma criação depois), os mesmos valores podem ser passados direto como flags, sem nenhum prompt interativo:
+
+```bash
+npx create-expo-module@latest --local \
+  --name InformacoesDoDispositivo \
+  --description "Leitura de informações do dispositivo via código nativo" \
+  --package expo.modules.informacoesdodispositivo \
+  --license MIT \
+  --module-version 1.0.0 \
+  --platform android \
+  --features Function \
+  --package-manager npm \
+  informacoes-do-dispositivo
+```
+
+> ⚠️ **Pegadinha do caminho:** com `--local`, o último argumento (o caminho) já é interpretado **relativo à pasta `modules/`**, não à raiz do projeto — escrever `modules/informacoes-do-dispositivo` em vez de só `informacoes-do-dispositivo` (como nos dois comandos acima) cria o módulo em `modules/modules/informacoes-do-dispositivo`, uma pasta aninhada a mais. Confira a estrutura gerada com `ls modules/` antes de seguir para o próximo passo, e mova a pasta um nível acima se isso acontecer.
+
+O resultado é uma pasta `modules/informacoes-do-dispositivo/`, com uma subpasta `android/` (Kotlin), um `expo-module.config.json` (é ele que diz ao Expo Modules API onde encontrar o módulo — sem esse arquivo, o autolinking do Passo 2 não o encontraria) e uma `src/` com o arquivo TypeScript que o resto do app importa (`InformacoesDoDispositivoModule.ts`). Diferente dos pacotes instalados via `npx expo install`, esse módulo mora **dentro do próprio projeto** — é código seu, não uma dependência de terceiros.
+
+**Passo 2 — gerar as pastas nativas**
+
+Antes de rodar `prebuild`, defina o identificador do app em `app.json` — o Android exige um pacote único mesmo antes de qualquer build de verdade (`android.package`, o mesmo campo revisitado no Tópico 10, de Publicação):
+
+```json
+// app.json — trecho
+{
+  "expo": {
+    "android": {
+      "package": "com.suaescola.appdecorrida"
+    }
+  }
+}
+```
+
+```bash
+npx expo prebuild --platform android
+```
+
+Managed workflow (o que usamos o tutorial inteiro) não tem pastas `android/`/`ios/` — o Expo as gera sob demanda. `prebuild` cria essas pastas nativas reais a partir da configuração do projeto (`app.json` e os módulos instalados, incluindo o que acabamos de criar no Passo 1) — e já inclui o autolinking do nosso módulo local, sem precisar registrá-lo manualmente em nenhum `settings.gradle` (confirme com `npx expo-modules-autolinking resolve -p android`, que deve listar `informacoes-do-dispositivo` entre os módulos resolvidos). A partir daqui, o projeto ainda funciona com `npx expo start`, mas testar o módulo nativo em si exige compilar essas pastas com Gradle (linha de comando) ou Android Studio — não roda mais só no Expo Go.
+
+**Passo 3 — a função nativa em Kotlin**
+
+Dentro de `modules/<nome-do-modulo>/android/src/main/java/.../<NomeDoModulo>Module.kt`, o template já gerado tem uma função `hello()` de exemplo. Trocando o nome e o corpo para algo do nosso app:
+
+```kotlin
+// modules/informacoes-do-dispositivo/android/src/main/java/expo/modules/informacoesdodispositivo/InformacoesDoDispositivoModule.kt
+package expo.modules.informacoesdodispositivo
+
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+
+class InformacoesDoDispositivoModule : Module() {
+  override fun definition() = ModuleDefinition {
+    Name("InformacoesDoDispositivo")
+
+    Function("nivelDeBateriaBruto") {
+      // um exemplo simples: no Kotlin de verdade, isso viria de
+      // android.os.BatteryManager — aqui só para ilustrar a ponte
+      return@Function 87
+    }
+  }
+}
+```
+
+`Name(...)` define como o módulo aparece do lado JavaScript; `Function(...)` expõe uma função síncrona chamável do JS (existe também `AsyncFunction` para algo que leva tempo, seguindo o mesmo padrão `Async`/Promise já visto o tutorial inteiro).
+
+**Passo 4 — usar a função no lado JavaScript**
+
+```javascript
+// utils/informacoesDoDispositivo.js
+import InformacoesDoDispositivo from '../modules/informacoes-do-dispositivo/src/InformacoesDoDispositivoModule';
+
+export function lerNivelDeBateriaBruto() {
+  return InformacoesDoDispositivo.nivelDeBateriaBruto();
+}
+```
+
+Repare que o import aponta para o arquivo `.ts` dentro de `src/`, e não para a pasta do módulo diretamente — o `create-expo-module` não gera um arquivo de re-exportação (`index.ts`) por padrão; ele existe como opção (`--barrel`, no Passo 1), mas sem ela, quem importa o módulo precisa apontar para o arquivo certo dentro de `src/`.
+
+Do ponto de vista de quem importa, `InformacoesDoDispositivo.nivelDeBateriaBruto()` não parece diferente de chamar qualquer outra função de um módulo Expo — e essa é a ideia: o Expo Modules API existe justamente para que módulos próprios pareçam, para o resto do app, tão naturais quanto os módulos oficiais.
+
+**Passo 5 — compilar e testar**
+
+Para desenvolver de verdade (com o app rodando e o Fast Refresh valendo para o lado JS), rode `npx expo run:android`, que compila as pastas nativas do Passo 2 e instala o app no emulador/celular conectado — substitui o `npx expo start` sempre que o projeto tiver módulos nativos próprios, já que o Expo Go genérico não contém código que não seja dele. Alternativamente, abra a pasta `android/` no Android Studio e rode por ali (botão "Run"). Para só **compilar** o módulo Kotlin isoladamente — sem instalar em nenhum aparelho, útil para confirmar que o código compila antes de testar no dispositivo — é possível chamar o Gradle diretamente pelo nome do módulo:
+
+```bash
+cd android
+./gradlew :informacoes-do-dispositivo:compileDebugKotlin
+```
+
+De qualquer uma das três formas, qualquer mudança no arquivo `.kt` exige recompilar — o Fast Refresh do Metro não alcança código nativo, só JavaScript.
+
+**Turbo Modules, para contexto:** existe também o caminho "Turbo Modules", da própria comunidade React Native (sem depender do pacote `expo`), preferível quando o módulo precisa de C++ para acesso de baixíssimo nível. Para a grande maioria dos casos — e para todo o restante deste tutorial — o Expo Modules API é a opção recomendada, por ter uma experiência de desenvolvimento mais simples.
+
+**Exercícios:**
+- **Fácil:** Rode `npx create-expo-module@latest --local` num projeto de teste e explore a estrutura de pastas gerada, sem alterar nada ainda.
+- **Médio:** Troque o valor fixo `87` de `nivelDeBateriaBruto` por uma leitura real da bateria, usando a API `android.os.BatteryManager` do Android (pesquise o método `getIntProperty`).
+- **Desafio:** Implemente a versão iOS da mesma função, em `modules/informacoes-do-dispositivo/ios/InformacoesDoDispositivoModule.swift`, usando `UIDevice.current.batteryLevel`.
+
+**Pergunta para fixação:** por que salvar o arquivo `.kt` de um módulo nativo não aciona o Fast Refresh do Metro, diferente de salvar qualquer arquivo `.jsx` usado neste tutorial até aqui?
+
+---
+
 ### 7. Armazenamento Local no Framework
 
 **Objetivo:** persistir os dados da corrida localmente, usando o padrão de CRUD do `expo-sqlite`.
@@ -1647,10 +2151,91 @@ async function lerUnidade() {
 }
 ```
 
+**Passo 5 — exportar o histórico para um arquivo, com `expo-file-system`**
+
+`AsyncStorage` e `expo-sqlite` guardam dados que só o próprio app lê. Às vezes o objetivo é diferente: gerar um arquivo de verdade, que o usuário possa compartilhar ou abrir em outro programa — por exemplo, exportar o histórico de corridas como um `.json`.
+
+```bash
+npx expo install expo-file-system
+```
+
+```javascript
+// utils/exportarHistorico.js
+import { File, Paths } from 'expo-file-system';
+
+export function exportarHistoricoComoJson(corridas) {
+  const arquivo = new File(Paths.document, 'historico-corridas.json');
+  arquivo.write(JSON.stringify(corridas, null, 2));
+  return arquivo.uri; // caminho local do arquivo gerado
+}
+```
+
+`Paths.document` aponta para a pasta de documentos do próprio app — privada, mas persistente entre uma abertura e outra (diferente de `Paths.cache`, que o sistema pode apagar para liberar espaço a qualquer momento). `arquivo.write(...)` grava o conteúdo de forma síncrona; para ler de volta, `arquivo.textSync()` devolve o texto salvo.
+
+**Passo 6 — o limite real de "acessar dados do aparelho"**
+
+Vale ser direto sobre um limite de plataforma, e não só de Expo: mesmo um app nativo puro (Passo anterior à parte) não consegue ler o **histórico de ligações** de um usuário sem passar por uma revisão extremamente restrita da Play Store (a permissão `READ_CALL_LOG` é classificada como de uso sensível, reservada a apps de identificação de chamadas/discador padrão) — e no iOS não existe, para nenhum app de terceiros, absolutamente nenhuma API pública para isso, sob nenhuma condição. Diferente de contatos (Tópico 4), câmera, localização (Tópico 5) e arquivos (Passo 5 acima), que são acessíveis com uma permissão comum, chamadas telefônicas ficam de fora por design — é uma categoria de dado que as duas plataformas tratam como sensível demais para conceder a um app comum, ainda que tecnicamente pedir a permissão fosse possível no Android.
+
 **Exercícios:**
 - **Fácil:** Liste as corridas salvas em uma `FlatList`, mostrando data e distância de cada uma.
 - **Médio:** Ao terminar uma corrida na tela do Tópico 5, chame `salvarCorrida` com a distância total e a duração, e confira se ela aparece em `app/historico.jsx`.
+- **Médio:** Adicione um botão "Exportar" em `app/historico.jsx` que chama `exportarHistoricoComoJson(corridas)` e mostra o `uri` retornado na tela.
 - **Desafio:** Adicione um botão para apagar uma corrida do histórico (`DELETE FROM corridas WHERE id = ?`), atualizando a lista depois.
+- **Desafio:** Instale `expo-sharing` e use `Sharing.shareAsync(uri)` para abrir o menu de compartilhamento do sistema com o arquivo exportado no Passo 5, em vez de só mostrar o caminho na tela.
+
+---
+
+### Gráficos — em tempo real e estáticos
+
+**Objetivo:** visualizar dados numéricos como gráfico, tanto atualizando sozinho durante a corrida quanto de forma parada no histórico.
+
+```bash
+npx expo install react-native-gifted-charts expo-linear-gradient react-native-svg
+```
+
+**Passo 1 — um gráfico de linha que atualiza sozinho: velocidade durante a corrida**
+
+Cada ponto de GPS que `useTracking` (Tópico 5) já coleta vem com mais informação do que usamos até agora: além de `latitude`/`longitude`, o objeto `coords` devolvido pelo `expo-location` traz `speed` — a velocidade instantânea do aparelho, em metros por segundo, medida pelo próprio GPS. Como `pontos` já guarda o `coords` inteiro (`setPontos((anteriores) => [...anteriores, posicao.coords])`, no Tópico 5), essa informação já está disponível, sem precisar calcular nada:
+
+```javascript
+// app/corrida.jsx — trecho
+import { LineChart } from 'react-native-gifted-charts';
+
+const dadosDeVelocidade = pontos.map((ponto) => ({
+  value: Math.round((ponto.speed ?? 0) * 3.6), // m/s para km/h
+}));
+```
+
+```javascript
+<LineChart data={dadosDeVelocidade} />
+```
+
+Como `dadosDeVelocidade` é recalculado a cada renderização, e `pontos` cresce a cada nova leitura do GPS (a cada poucos segundos, conforme configurado em `useTracking`), o gráfico se atualiza sozinho conforme a corrida avança — sem nenhum código extra de "tempo real": é a mesma reatividade de sempre, aplicada a mais um lugar.
+
+**Passo 2 — um gráfico estático: distância das últimas corridas**
+
+Na tela de histórico (Tópico 7), as corridas já estão carregadas em `corridas` (via `getAllAsync`). Um gráfico de barras compara a distância de cada uma, de uma vez só — sem precisar atualizar sozinho, já que o histórico só muda quando uma corrida nova é salva:
+
+```javascript
+// app/historico.jsx — trecho
+import { BarChart } from 'react-native-gifted-charts';
+
+const dadosDeDistancia = corridas.map((corrida) => ({
+  value: Math.round(corrida.distancia),
+  label: new Date(corrida.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+}));
+```
+
+```javascript
+<BarChart data={dadosDeDistancia} />
+```
+
+**Exercícios:**
+- **Fácil:** Adicione a prop `areaChart` ao `LineChart` do Passo 1, e compare visualmente com a versão sem ela.
+- **Médio:** Limite `dadosDeVelocidade` aos últimos 30 pontos (`pontos.slice(-30)`) antes de montar o array, para o gráfico não ficar cada vez mais apertado conforme a corrida for ficando longa.
+- **Desafio:** No `BarChart` do histórico, adicione uma cor diferente para a barra da corrida mais longa (dica: compare `corrida.distancia` com `Math.max(...corridas.map((c) => c.distancia))` e passe uma prop de cor por item, se a versão instalada da biblioteca suportar).
+
+**Pergunta para fixação:** por que o gráfico de velocidade do Passo 1 não precisa de nenhum `setInterval` ou lógica de "atualizar a cada X segundos" para funcionar em tempo real?
 
 ---
 
@@ -1738,11 +2323,26 @@ async function obterTokenDePush() {
 1. Por que uma notificação local funciona no Expo Go, mas uma notificação push (no Android) não?
 2. No Android, o que precisa existir antes de `getExpoPushTokenAsync` poder ser chamado com sucesso (dica: revise o Tópico 4 sobre permissões, e pense no que acontece na primeira vez que o Android pede autorização para notificações)?
 
+**Por que não dá para "escutar" SMS ou mensagens de WhatsApp**
+
+É comum perguntar: já que o app pode receber uma notificação push de um servidor, por que não simplesmente "escutar" quando chega um SMS ou uma mensagem de WhatsApp, em vez de depender de notificação? A resposta é uma restrição de plataforma, não uma limitação do Expo:
+
+- **SMS, no Android:** ler o conteúdo de SMS recebidos (`RECEIVE_SMS`/`READ_SMS`) é uma permissão que o Google classifica como *restrita* — só apps que são o **aplicativo de SMS padrão** do aparelho podem pedi-la e ainda assim passar pela revisão da Play Store. Um app de corrida jamais se qualificaria para isso, e nenhum módulo do Expo expõe esse acesso, exatamente por essa restrição valer para qualquer app fora desse caso de uso. No iOS, não existe **nenhuma** API pública para ler SMS de terceiros, em hipótese alguma.
+- **WhatsApp:** não existe nenhuma API pública, do WhatsApp ou do sistema operacional, que permita a um outro app ler mensagens do WhatsApp. A única forma tecnicamente possível de fazer algo parecido (um *Accessibility Service* lendo o conteúdo da tela) viola os termos de uso tanto do Android quanto do WhatsApp, e apps que tentam isso são banidos das lojas quando descobertos.
+
+É exatamente por essas portas estarem fechadas — de propósito, por motivos de privacidade — que "meu servidor manda uma notificação push" (Passos 1 a 5 deste tópico) é o único caminho real para avisar o usuário de algo que aconteceu longe do app, e não um substituto de segunda escolha.
+
 ---
 
 ### 9. Gerenciamento de Estado (Context API, Redux)
 
 **Objetivo:** compartilhar o estado da corrida entre telas diferentes (mapa, histórico, resumo) sem precisar repassar props manualmente por vários níveis de componentes.
+
+**Três termos que vamos usar o tempo todo neste tópico**
+
+- **Context** (contexto) é um canal de dados do React que qualquer componente, em qualquer profundidade da árvore, pode ler diretamente — sem que os componentes no meio do caminho precisem saber que aquele dado existe. É criado com `createContext` e lido com `useContext`.
+- **Provider** (provedor) é o componente que "alimenta" um contexto com um valor — tudo que estiver dentro dele (em qualquer profundidade) enxerga aquele valor. Todo contexto vem com seu próprio Provider (`AlgumContext.Provider`); ao longo deste tutorial, empacotamos esse Provider numa função própria (`CorridaProvider`, no Passo 2) só para deixar o uso mais legível.
+- **Reducer** é uma função pura — sem efeitos colaterais, sem chamadas de rede, sem mexer em nada fora dela — que recebe o estado atual mais uma **ação** (um objeto descrevendo o que aconteceu) e devolve o **novo** estado, sem nunca alterar o antigo. É a mesma ideia de imutabilidade da seção de Fundamentos de JavaScript, só que centralizada num único lugar: em vez de espalhar `setAlgumaCoisa` por vários componentes, toda mudança de estado passa por essa função só, o que torna mais fácil auditar e testar. `useReducer` é o hook que liga um reducer a um componente, do mesmo jeito que `useState` liga um valor simples.
 
 Um caso clássico de uso da Context API é o tema/idioma de um app — um contexto envolvendo toda a árvore de telas. Aqui aplicamos a mesma ideia a um estado de negócio: o rastreamento da corrida.
 
@@ -1939,6 +2539,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function entrar(email, senha) {
+    // Usuário de teste local — não depende do reqres.in nem de internet,
+    // útil para demonstrar o app offline ou em sala de aula.
+    if (email === 'teste@teste.com' && senha === '1234') {
+      const tokenLocal = 'token-de-teste-local';
+      await salvarTokenSeguro(tokenLocal);
+      setToken(tokenLocal);
+      return;
+    }
+
     const resposta = await fetch('https://reqres.in/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1971,7 +2580,7 @@ export function useAuth() {
 }
 ```
 
-`reqres.in` é uma API pública gratuita, feita justamente para testar telas de login — `eve.holt@reqres.in`/`cityslicka` é uma das combinações de teste documentadas por ela, e devolve um token de verdade. Note que `entrar` **lança** um erro (`throw`) em vez de tratá-lo ali dentro — quem chama `entrar` (a tela de login, no Passo 5) é quem decide como mostrar esse erro para o usuário.
+`reqres.in` é uma API pública gratuita, feita justamente para testar telas de login — `eve.holt@reqres.in`/`cityslicka` é uma das combinações de teste documentadas por ela, e devolve um token de verdade. Como é uma API de terceiros, ela só reconhece os e-mails de teste que ela mesma documenta — não dá para "cadastrar" nenhum e-mail novo nela. Por isso o atalho local no início de `entrar`: `teste@teste.com`/`1234` nunca chega a fazer uma requisição de rede, e funciona mesmo sem internet — útil sempre que testar o fluxo de login não for o ponto principal (por exemplo, ao demonstrar as telas depois do login para a turma). Note que `entrar` **lança** um erro (`throw`) em vez de tratá-lo ali dentro — quem chama `entrar` (a tela de login, no Passo 5) é quem decide como mostrar esse erro para o usuário.
 
 **Passo 4 — a tela de login**
 
@@ -2115,6 +2724,106 @@ const { sair } = useAuth();
 
 ---
 
+### Menu de navegação (Drawer) — acesso a todas as telas
+
+**Objetivo:** trocar o `<Stack />` simples do grupo `(app)` (Autenticação, Passo 5) por um menu hambúrguer que dá acesso direto a qualquer tela do app, de qualquer lugar — em vez de depender só de botões espalhados por cada tela.
+
+Lá no Tópico 1 (Componentes e Navegação), a seção "Outros tipos de layout" já mencionou o `<Drawer />` de passagem, ao lado de `<Stack />` e `<Tabs />`, mas nenhum dos dois grupos de rotas usados até aqui precisava de um menu lateral. Agora que o app já tem sete telas dentro de `(app)` (`index`, `rotas`, `corrida`, `historico`, `cep`, `compartilhar`, `concorrencia`), navegar entre elas só por botão a botão (como o "Ver rotas planejadas" do Tópico 1) fica limitado — daí o Drawer.
+
+**Passo 1 — confirme as dependências**
+
+A partir do SDK 56, o Drawer já vem embutido no próprio `expo-router` (antes disso, era preciso instalar `@react-navigation/drawer` à parte). Ele ainda depende de `react-native-reanimated`, `react-native-worklets` e `react-native-gesture-handler` para animar a abertura/fechamento — os dois primeiros já foram instalados no tópico de Animações; confirme que os três estão presentes:
+
+```bash
+npx expo install react-native-reanimated react-native-worklets react-native-gesture-handler
+```
+
+**Passo 2 — troque o `Stack` do grupo `(app)` por um `Drawer`**
+
+```javascript
+// app/(app)/_layout.jsx
+import { Drawer } from 'expo-router/drawer';
+
+export default function AppLayout() {
+  return (
+    <Drawer>
+      <Drawer.Screen name="index" options={{ drawerLabel: 'Início', title: 'App de Corrida' }} />
+      <Drawer.Screen name="rotas" options={{ drawerLabel: 'Rotas planejadas', headerShown: false }} />
+      <Drawer.Screen name="corrida" options={{ drawerLabel: 'Corrida', title: 'Corrida' }} />
+      <Drawer.Screen name="historico" options={{ drawerLabel: 'Histórico', title: 'Histórico' }} />
+      <Drawer.Screen name="cep" options={{ drawerLabel: 'Consulta de CEP', title: 'CEP' }} />
+      <Drawer.Screen name="compartilhar" options={{ drawerLabel: 'Compartilhar', title: 'Compartilhar' }} />
+      <Drawer.Screen name="concorrencia" options={{ drawerLabel: 'Concorrência (demo)', title: 'Concorrência' }} />
+    </Drawer>
+  );
+}
+```
+
+Cada `Drawer.Screen` corresponde a um arquivo (ou pasta) direto dentro de `app/(app)/`, do mesmo jeito que `Stack.Screen` já funcionava — `name` precisa bater exatamente com o nome do arquivo/pasta. Rode o app e repare: o cabeçalho de cada tela agora ganhou, de graça, um ícone de menu (☰) no canto superior esquerdo — o próprio Drawer já cuida de mostrá-lo e de ligá-lo ao gesto de abrir o menu, sem escrever nada a mais para isso.
+
+**Passo 3 — o caso de `rotas`, que já é um Stack por dentro**
+
+`rotas/` não é uma tela só, é uma pasta com duas (`index.jsx` e `[id].jsx`, do Tópico 1) — sem tratamento especial, o Drawer trataria as duas como entradas soltas e desconectadas. A correção é dar a essa pasta o próprio `_layout.jsx`, com um `Stack` por dentro, exatamente como fizemos para `(app)/` lá na Autenticação:
+
+```javascript
+// app/(app)/rotas/_layout.jsx
+import { Stack } from 'expo-router';
+import { DrawerToggleButton } from 'expo-router/drawer';
+
+export default function RotasLayout() {
+  return (
+    <Stack>
+      <Stack.Screen
+        name="index"
+        options={{ title: 'Rotas planejadas', headerLeft: () => <DrawerToggleButton /> }}
+      />
+      <Stack.Screen name="[id]" options={{ title: 'Detalhes da rota' }} />
+    </Stack>
+  );
+}
+```
+
+Repare em dois detalhes que se conectam com o Passo 2: o `Drawer.Screen name="rotas"` ganhou `headerShown: false` — porque, sem isso, a tela teria **dois cabeçalhos empilhados** (um do Drawer, outro deste Stack). E só a tela `index` (a primeira do Stack) recebe `headerLeft` com o `DrawerToggleButton` manualmente — a tela `[id]` já ganha sozinha uma seta de "voltar" (por ter uma tela anterior na pilha), e sobrescrever `headerLeft` ali apagaria essa seta, trocando-a pelo ícone de menu, que faria menos sentido numa tela de detalhe.
+
+**Passo 4 — um botão "Sair" dentro do próprio menu**
+
+O Drawer aceita um `drawerContent` customizado — sem ele, o menu já lista as telas do Passo 2 automaticamente, mas nada impede de acrescentar itens que não são telas, como o logout do `AuthContext` (Autenticação, Passo 3):
+
+```javascript
+// app/(app)/_layout.jsx — acrescente aos imports
+import { DrawerContentScrollView, DrawerItemList, DrawerItem } from 'expo-router/drawer';
+import { useAuth } from '../../context/AuthContext';
+
+function ConteudoDoMenu(props) {
+  const { sair } = useAuth();
+
+  return (
+    <DrawerContentScrollView {...props}>
+      <DrawerItemList {...props} />
+      <DrawerItem label="Sair" onPress={() => sair()} />
+    </DrawerContentScrollView>
+  );
+}
+```
+
+`DrawerItemList` desenha a lista padrão (os `Drawer.Screen` do Passo 2); `DrawerItem` acrescenta uma linha extra, com a mesma aparência, mas sem levar a rota nenhuma — só dispara `sair()`. Ligue esse componente ao Drawer:
+
+```javascript
+// app/(app)/_layout.jsx — troque a linha do Drawer
+<Drawer drawerContent={(props) => <ConteudoDoMenu {...props} />}>
+```
+
+Toque em "Sair" no menu e confirme que o mesmo redirecionamento automático do `Stack.Protected` (Autenticação, Passo 6) acontece aqui — o Drawer não precisa saber nada sobre autenticação para isso funcionar, porque a proteção continua sendo feita uma camada acima, no `app/_layout.jsx` raiz.
+
+**Exercícios:**
+- **Fácil:** Troque o ícone de cada `Drawer.Screen` usando a opção `drawerIcon`, que recebe uma função `({ color, size }) => <AlgumIcone ... />` (dá para usar `@expo/vector-icons`, já incluso no template padrão do Expo).
+- **Médio:** Adicione um cabeçalho customizado acima da lista de telas em `ConteudoDoMenu` (por exemplo, o e-mail do usuário logado, lido de algum lugar do `AuthContext`).
+- **Desafio:** Configure `screenOptions={{ drawerType: 'permanent' }}` no `Drawer` e observe a diferença de comportamento numa tela larga (ou no navegador, via `npx expo start --web`) — pesquise por que esse tipo de Drawer é comum em apps para tablet/desktop, mas raro em telas de celular.
+
+**Pergunta para fixação:** por que a tela `rotas/[id]` não precisou de nenhum ajuste no Passo 3 além do `title`, enquanto `rotas/index` precisou do `headerLeft` manual?
+
+---
+
 ### 10. Publicação de Apps (builds, lojas)
 
 **Objetivo:** sair do Expo Go e gerar um build de verdade, pronto para as lojas.
@@ -2156,3 +2865,1168 @@ Preencha descrição, screenshots e política de privacidade, e envie para revis
 **Exercícios:**
 - **Fácil:** Gere um build de preview do seu app com `eas build --profile preview`, documentando cada etapa (ícone, versão, perfil) em um checklist.
 - **Médio:** Instale o build de preview gerado em um celular físico (via QR code do EAS) e confira se tudo funciona fora do Expo Go — preste atenção especial em `expo-contacts/legacy` e outros módulos nativos.
+---
+
+### Projeto completo — todos os arquivos juntos
+
+Este é o app de corrida montado por inteiro, juntando o resultado final de cada tópico anterior num único projeto — cada arquivo abaixo traz um comentário no topo apontando de qual(is) tópico(s) ele veio, para servir de referência rápida caso algum trecho pareça desconectado do resto. É o mesmo código já apresentado ao longo do tutorial, sem nenhuma novidade — só organizado junto, como ficaria numa cópia real do projeto.
+
+```
+app-de-corrida/
+├── app/
+│   ├── _layout.jsx
+│   ├── login.jsx
+│   └── (app)/
+│       ├── _layout.jsx
+│       ├── index.jsx
+│       ├── cep.jsx
+│       ├── corrida.jsx
+│       ├── historico.jsx
+│       ├── compartilhar.jsx
+│       ├── concorrencia.jsx
+│       └── rotas/
+│           ├── _layout.jsx
+│           ├── index.jsx
+│           └── [id].jsx
+├── components/
+│   ├── CartaoDeRota.jsx
+│   ├── AvisoPermissaoNegada.jsx
+│   └── RaceMap.jsx
+├── context/
+│   ├── AuthContext.jsx
+│   └── CorridaContext.jsx
+├── hooks/
+│   └── useTracking.js
+├── utils/
+│   ├── calculos.js
+│   ├── mapaHtml.js
+│   ├── armazenamentoSeguro.js
+│   ├── exportarHistorico.js
+│   ├── useAcelerometro.js
+│   ├── useDetectorDeChacoalhada.js
+│   └── informacoesDoDispositivo.js
+├── modules/
+│   └── informacoes-do-dispositivo/
+│       ├── expo-module.config.json
+│       ├── src/InformacoesDoDispositivoModule.ts
+│       └── android/.../InformacoesDoDispositivoModule.kt
+├── assets/
+│   ├── sons/
+│   │   ├── apito.mp3
+│   │   └── CREDITS.md      ← atribuição do som (CC BY-SA)
+│   └── images/
+│       ├── icon.png                     ← ícone genérico (iOS/web)
+│       ├── android-icon-foreground.png  ← camada de frente do ícone adaptativo
+│       ├── android-icon-background.png  ← camada de fundo do ícone adaptativo
+│       ├── android-icon-monochrome.png  ← versão monocromática (Android 13+)
+│       ├── splash-icon.png              ← imagem da splash screen
+│       └── favicon.png                  ← ícone da versão web
+├── app.json                 ← nome/ícone/splash/plugins (ver "Personalizando o ícone e a tela de abertura")
+└── servidor-rotas/          ← projeto Node separado, fora do app Expo
+    ├── package.json
+    └── index.js
+```
+
+**`app/_layout.jsx`** — layout raiz. Vem do Tópico 1 (`<Stack />` inicial), depois reescrito na Autenticação, Passo 6 (`Stack.Protected`, `AuthProvider`, `CorridaProvider`), com o registro de notificações do Tópico 8, Passo 2.
+
+```javascript
+// app/_layout.jsx
+// Origem: Tópico 1 (Passo 1, layout básico) + Tópico 8 (Passo 2, handler de notificação)
+//         + Autenticação e Proteção de Telas (Passo 6, Stack.Protected + providers)
+import { Stack } from 'expo-router';
+import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import * as Notifications from 'expo-notifications';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { CorridaProvider } from '../context/CorridaContext';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const queryClient = new QueryClient();
+
+function NavegacaoRaiz() {
+  const { token, carregando } = useAuth();
+
+  if (carregando) return null; // ainda checando se já existe um token salvo
+
+  return (
+    <Stack>
+      <Stack.Protected guard={!!token}>
+        <Stack.Screen name="(app)" options={{ headerShown: false }} />
+      </Stack.Protected>
+
+      <Stack.Protected guard={!token}>
+        <Stack.Screen name="login" />
+      </Stack.Protected>
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <CorridaProvider>
+          <NavegacaoRaiz />
+        </CorridaProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+**`app/(app)/_layout.jsx`** — layout do grupo protegido. Origem: Autenticação, Passo 5 (base) + Menu de navegação (Drawer), Passos 2 e 4 (o Drawer em si e o botão "Sair" no menu).
+
+```javascript
+// app/(app)/_layout.jsx
+// Origem: Autenticação e Proteção de Telas (Passo 5, base)
+//         + Menu de navegação (Drawer) — acesso a todas as telas (Passos 2 e 4)
+import { Drawer } from 'expo-router/drawer';
+import { DrawerContentScrollView, DrawerItemList, DrawerItem } from 'expo-router/drawer';
+import { useAuth } from '../../context/AuthContext';
+
+function ConteudoDoMenu(props) {
+  const { sair } = useAuth();
+
+  return (
+    <DrawerContentScrollView {...props}>
+      <DrawerItemList {...props} />
+      <DrawerItem label="Sair" onPress={() => sair()} />
+    </DrawerContentScrollView>
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <Drawer drawerContent={(props) => <ConteudoDoMenu {...props} />}>
+      <Drawer.Screen name="index" options={{ drawerLabel: 'Início', title: 'App de Corrida' }} />
+      <Drawer.Screen name="rotas" options={{ drawerLabel: 'Rotas planejadas', headerShown: false }} />
+      <Drawer.Screen name="corrida" options={{ drawerLabel: 'Corrida', title: 'Corrida' }} />
+      <Drawer.Screen name="historico" options={{ drawerLabel: 'Histórico', title: 'Histórico' }} />
+      <Drawer.Screen name="cep" options={{ drawerLabel: 'Consulta de CEP', title: 'CEP' }} />
+      <Drawer.Screen name="compartilhar" options={{ drawerLabel: 'Compartilhar', title: 'Compartilhar' }} />
+      <Drawer.Screen name="concorrencia" options={{ drawerLabel: 'Concorrência (demo)', title: 'Concorrência' }} />
+    </Drawer>
+  );
+}
+```
+
+**`app/(app)/rotas/_layout.jsx`** — Origem: Menu de navegação (Drawer), Passo 3.
+
+```javascript
+// app/(app)/rotas/_layout.jsx
+// Origem: Menu de navegação (Drawer) — acesso a todas as telas (Passo 3)
+import { Stack } from 'expo-router';
+import { DrawerToggleButton } from 'expo-router/drawer';
+
+export default function RotasLayout() {
+  return (
+    <Stack>
+      <Stack.Screen
+        name="index"
+        options={{ title: 'Rotas planejadas', headerLeft: () => <DrawerToggleButton /> }}
+      />
+      <Stack.Screen name="[id]" options={{ title: 'Detalhes da rota' }} />
+    </Stack>
+  );
+}
+```
+
+**`app/login.jsx`** — Origem: Autenticação, Passo 4.
+
+```javascript
+// app/login.jsx
+// Origem: Autenticação e Proteção de Telas (Passo 4)
+import { useState } from 'react';
+import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
+import { useAuth } from '../context/AuthContext';
+
+export default function Login() {
+  const { entrar } = useAuth();
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function aoEntrar() {
+    setErro(null);
+    setCarregando(true);
+    try {
+      await entrar(email, senha);
+    } catch (erroDeLogin) {
+      setErro(erroDeLogin.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Entrar</Text>
+      <TextInput style={styles.input} placeholder="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" />
+      <TextInput style={styles.input} placeholder="Senha" value={senha} onChangeText={setSenha} secureTextEntry />
+      <Button title={carregando ? 'Entrando...' : 'Entrar'} onPress={() => aoEntrar()} disabled={carregando} />
+      {erro && <Text style={styles.erro}>{erro}</Text>}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+  titulo: { fontSize: 24, fontWeight: 'bold' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10 },
+  erro: { color: '#c62828' },
+});
+```
+
+**`app/(app)/index.jsx`** — tela inicial. Origem: Fundamentos de JavaScript, Passo 5 (lista de favoritos) + Autenticação, Passo 7 (botão "Sair"), mais um link para a lista de rotas (Tópico 1) para conectar as duas telas.
+
+```javascript
+// app/(app)/index.jsx
+// Origem: Fundamentos de JavaScript para React (Passo 5, lista de favoritos)
+//         + 1. Componentes e Navegação (link para /rotas)
+//         + Autenticação e Proteção de Telas (Passo 7, botão Sair)
+import { useState } from 'react';
+import { StyleSheet, Text, View, Button, FlatList, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
+
+export default function Inicio() {
+  const router = useRouter();
+  const { sair } = useAuth();
+  const [favoritos, setFavoritos] = useState([]);
+  let proximoId = favoritos.length + 1;
+
+  function adicionarFavorito() {
+    setFavoritos((anteriores) => [...anteriores, { id: String(proximoId), nome: `Rota ${proximoId}` }]);
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>App de Corrida</Text>
+      <Button title="Ver rotas planejadas" onPress={() => router.push('/rotas')} />
+      <Button title="Adicionar rota favorita" onPress={() => adicionarFavorito()} />
+      <FlatList
+        data={favoritos}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <Text>{item.nome}</Text>}
+      />
+      <Button title="Sair" onPress={() => sair()} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingTop: Platform.select({ ios: 20, android: 32, default: 0 }),
+  },
+  titulo: { fontSize: 28, fontWeight: 'bold' },
+});
+```
+
+**`app/(app)/cep.jsx`** — Origem: Promises, async/await, Passo 4.
+
+```javascript
+// app/(app)/cep.jsx
+// Origem: Promises, async/await e funções assíncronas (Passo 4)
+import { useState } from 'react';
+import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
+
+export default function ConsultaCep() {
+  const [cep, setCep] = useState('');
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  async function consultarCep() {
+    setErro(null);
+    setDados(null);
+    try {
+      const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const dadoEmJson = await resposta.json();
+      if (dadoEmJson.erro) {
+        setErro('CEP não encontrado.');
+      } else {
+        setDados(dadoEmJson);
+      }
+    } catch (erroDeRede) {
+      setErro('Falha de conexão. Tente novamente.');
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <TextInput
+        style={styles.input}
+        placeholder="Digite o CEP"
+        value={cep}
+        onChangeText={setCep}
+        keyboardType="numeric"
+      />
+      <Button title="Buscar" onPress={() => consultarCep()} />
+      {erro && <Text style={styles.erro}>{erro}</Text>}
+      {dados && (
+        <Text>{dados.logradouro}, {dados.localidade} - {dados.uf}</Text>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10 },
+  erro: { color: '#c62828' },
+});
+```
+
+**`app/(app)/concorrencia.jsx`** — Origem: 3. Concorrência e Threads, Passos 2-3.
+
+```javascript
+// app/(app)/concorrencia.jsx
+// Origem: 3. Concorrência e Threads (Passos 2 e 3)
+import { useState } from 'react';
+import { View, Button, Text, StyleSheet } from 'react-native';
+import { distanciaTotal, distanciaTotalEmLotes } from '../../utils/calculos';
+
+function gerarPontosDeTeste(quantidade) {
+  const pontos = [];
+  for (let i = 0; i < quantidade; i++) {
+    pontos.push({ latitude: -23.55 + i * 0.00001, longitude: -46.63 + i * 0.00001 });
+  }
+  return pontos;
+}
+
+export default function Concorrencia() {
+  const [resultado, setResultado] = useState(null);
+
+  function rodarBloqueante() {
+    const pontos = gerarPontosDeTeste(2_000_000);
+    const metros = distanciaTotal(pontos);
+    setResultado(metros);
+  }
+
+  function rodarEmLotes() {
+    const pontos = gerarPontosDeTeste(2_000_000);
+    distanciaTotalEmLotes(pontos, (metros) => setResultado(metros));
+  }
+
+  return (
+    <View style={styles.container}>
+      <Button title="Rodar bloqueante" onPress={rodarBloqueante} />
+      <Button title="Rodar em lotes" onPress={rodarEmLotes} />
+      {resultado != null && <Text>{Math.round(resultado)} metros</Text>}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+});
+```
+
+**`app/(app)/compartilhar.jsx`** — Origem: 4. Permissões Avançadas, Passos 1-5.
+
+```javascript
+// app/(app)/compartilhar.jsx
+// Origem: 4. Permissões Avançadas (Passos 1 a 5)
+import { useState } from 'react';
+import { View, Button, Text, FlatList, StyleSheet } from 'react-native';
+import * as Contacts from 'expo-contacts/legacy';
+import AvisoPermissaoNegada from '../../components/AvisoPermissaoNegada';
+
+export default function Compartilhar() {
+  const [contatos, setContatos] = useState([]);
+  const [status, setStatus] = useState(null);
+  const [podePedirNovamente, setPodePedirNovamente] = useState(true);
+  const [carregando, setCarregando] = useState(false);
+
+  async function buscarContatos() {
+    setCarregando(true);
+    try {
+      const permissao = await Contacts.requestPermissionsAsync();
+      setStatus(permissao.status);
+      setPodePedirNovamente(permissao.canAskAgain);
+
+      if (permissao.status !== 'granted') return;
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers],
+      });
+      setContatos(data.filter((c) => c.phoneNumbers?.length > 0));
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Button
+        title={carregando ? 'Carregando...' : 'Carregar contatos'}
+        onPress={buscarContatos}
+        disabled={carregando}
+      />
+
+      {status && status !== 'granted' && (
+        <AvisoPermissaoNegada
+          recurso="aos contatos"
+          podePedirNovamente={podePedirNovamente}
+          aoTentarNovamente={buscarContatos}
+        />
+      )}
+
+      <FlatList
+        data={contatos}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <Text style={styles.item}>{item.name}</Text>}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12 },
+  item: { paddingVertical: 4 },
+});
+```
+
+**`app/(app)/rotas/index.jsx`** — Origem: 1. Componentes e Navegação, Passo 2 + Mídia, Passo 2 (`imagemUrl`).
+
+```javascript
+// app/(app)/rotas/index.jsx
+// Origem: 1. Componentes e Navegação no Framework (Passo 2)
+//         + Mídia — imagens, sons e outros arquivos (Passo 2, campo imagemUrl)
+import { useRouter } from 'expo-router';
+import { FlatList } from 'react-native';
+import CartaoDeRota from '../../../components/CartaoDeRota';
+
+const ROTAS_PLANEJADAS = [
+  { id: '1', nome: 'Volta do parque', distanciaEstimadaKm: 3.2, imagemUrl: 'https://exemplo.com/imagens/parque.jpg' },
+  { id: '2', nome: 'Orla da praia', distanciaEstimadaKm: 5.8, imagemUrl: 'https://exemplo.com/imagens/praia.jpg' },
+];
+
+export default function ListaDeRotas() {
+  const router = useRouter();
+
+  return (
+    <FlatList
+      data={ROTAS_PLANEJADAS}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <CartaoDeRota
+          rota={item}
+          onPress={() =>
+            router.push({
+              pathname: '/rotas/[id]',
+              params: { id: item.id, nome: item.nome, distanciaEstimadaKm: item.distanciaEstimadaKm },
+            })
+          }
+        />
+      )}
+    />
+  );
+}
+```
+
+> Nota: o servidor construído em "Criando sua própria API (Node.js/Express) e autenticação com JWT" expõe esse mesmo array via `GET /rotas` — trocar `ROTAS_PLANEJADAS` por um `useQuery` consumindo esse endpoint (padrão do Tópico 2) é exatamente o Desafio proposto naquele tópico.
+
+**`app/(app)/rotas/[id].jsx`** — Origem: 1. Componentes e Navegação, Passo 3.
+
+```javascript
+// app/(app)/rotas/[id].jsx
+// Origem: 1. Componentes e Navegação no Framework (Passo 3)
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Button, StyleSheet, Text, View } from 'react-native';
+
+export default function DetalhesRota() {
+  const { id, nome, distanciaEstimadaKm } = useLocalSearchParams();
+  const router = useRouter();
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>{nome || `Rota ${id}`}</Text>
+      {distanciaEstimadaKm && <Text>{distanciaEstimadaKm} km estimados</Text>}
+      <Button title="Iniciar corrida" onPress={() => router.push('/corrida')} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 8 },
+  titulo: { fontSize: 20, fontWeight: '600' },
+});
+```
+
+**`app/(app)/corrida.jsx`** — a tela que mais tópicos alimentam. Origem: Localização e Mapas (Passo 7, base), Mídia (Passo 4, som), Animações com Reanimated (Passo 2, feedback do botão), 6. Acesso a Recursos Nativos (Passo 5, chacoalhada + haptics), Gráficos (Passo 1, velocidade em tempo real).
+
+```javascript
+// app/(app)/corrida.jsx
+// Origem: 5. Localização e Mapas (Passo 7, base da tela)
+//         + Mídia — imagens, sons e outros arquivos (Passo 4, som ao iniciar)
+//         + Animações com Reanimated (Passo 2, feedback do botão)
+//         + 6. Acesso a Recursos Nativos via Framework (Passo 5, chacoalhada + haptics)
+//         + Gráficos — em tempo real e estáticos (Passo 1, velocidade)
+import { useState } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { useAudioPlayer } from 'expo-audio';
+import * as Haptics from 'expo-haptics';
+import { LineChart } from 'react-native-gifted-charts';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { useTracking } from '../../hooks/useTracking';
+import { RaceMap } from '../../components/RaceMap';
+import { useDetectorDeChacoalhada } from '../../utils/useDetectorDeChacoalhada';
+
+const somDeApito = require('../../assets/sons/apito.mp3');
+
+export default function Corrida() {
+  const { pontos, rastreando, erro, iniciar, parar } = useTracking();
+  const tocador = useAudioPlayer(somDeApito);
+  const [pontosDeInteresse, setPontosDeInteresse] = useState([]);
+  const escala = useSharedValue(1);
+
+  const estiloBotao = useAnimatedStyle(() => ({
+    transform: [{ scale: escala.value }],
+  }));
+
+  function iniciarComSom() {
+    tocador.seekTo(0);
+    tocador.play();
+    iniciar();
+  }
+
+  useDetectorDeChacoalhada(() => {
+    if (!rastreando) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setPontosDeInteresse((anteriores) => [...anteriores, pontos.at(-1)]);
+  });
+
+  const dadosDeVelocidade = pontos.map((ponto) => ({
+    value: Math.round((ponto.speed ?? 0) * 3.6), // m/s para km/h
+  }));
+
+  return (
+    <View style={{ flex: 1 }}>
+      <RaceMap pontos={pontos} />
+
+      <Pressable
+        onPressIn={() => { escala.value = withSpring(0.92); }}
+        onPressOut={() => { escala.value = withSpring(1); }}
+        onPress={rastreando ? parar : iniciarComSom}
+      >
+        <Animated.View style={estiloBotao}>
+          <Text>{rastreando ? 'Parar' : 'Iniciar'}</Text>
+        </Animated.View>
+      </Pressable>
+
+      <Text>Pontos de interesse: {pontosDeInteresse.length}</Text>
+      <LineChart data={dadosDeVelocidade} />
+
+      {erro && <Text>{erro}</Text>}
+    </View>
+  );
+}
+```
+
+**`app/(app)/historico.jsx`** — Origem: 7. Armazenamento Local (Passos 1-5) + Gráficos (Passo 2).
+
+```javascript
+// app/(app)/historico.jsx
+// Origem: 7. Armazenamento Local no Framework (Passos 1 a 5)
+//         + Gráficos — em tempo real e estáticos (Passo 2)
+import * as SQLite from 'expo-sqlite';
+import { useEffect, useState } from 'react';
+import { BarChart } from 'react-native-gifted-charts';
+import { exportarHistoricoComoJson } from '../../utils/exportarHistorico';
+
+export default function Historico() {
+  const db = SQLite.openDatabaseSync('corridas.db');
+  const [corridas, setCorridas] = useState([]);
+
+  useEffect(() => {
+    db.execSync(
+      'CREATE TABLE IF NOT EXISTS corridas (id INTEGER PRIMARY KEY AUTOINCREMENT, distancia REAL, duracao INTEGER, data TEXT)'
+    );
+    carregarCorridas();
+  }, []);
+
+  function salvarCorrida(distancia, duracao) {
+    db.runAsync(
+      'INSERT INTO corridas (distancia, duracao, data) VALUES (?, ?, ?)',
+      [distancia, duracao, new Date().toISOString()]
+    ).then(carregarCorridas);
+  }
+
+  function carregarCorridas() {
+    db.getAllAsync('SELECT * FROM corridas ORDER BY data DESC;').then(setCorridas);
+  }
+
+  const dadosDeDistancia = corridas.map((corrida) => ({
+    value: Math.round(corrida.distancia),
+    label: new Date(corrida.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+  }));
+
+  return (
+    <>
+      <BarChart data={dadosDeDistancia} />
+      {/* lista de corridas + botão "Exportar" (exportarHistoricoComoJson) ficam
+          a cargo dos Exercícios do Tópico 7 — omitidos aqui por já estarem
+          descritos passo a passo naquela seção */}
+    </>
+  );
+}
+```
+
+**`components/CartaoDeRota.jsx`** — Origem: 1. Componentes e Navegação + Mídia, Passo 2 (imagem).
+
+```javascript
+// components/CartaoDeRota.jsx
+// Origem: 1. Componentes e Navegação no Framework
+//         + Mídia — imagens, sons e outros arquivos (Passo 2, imagem do cartão)
+import { TouchableOpacity, Text } from 'react-native';
+import { Image } from 'expo-image';
+
+export default function CartaoDeRota({ rota, onPress }) {
+  return (
+    <TouchableOpacity onPress={onPress}>
+      <Image source={rota.imagemUrl} style={{ width: 60, height: 60, borderRadius: 8 }} contentFit="cover" />
+      <Text>{rota.nome}</Text>
+      <Text>{rota.distanciaEstimadaKm} km</Text>
+    </TouchableOpacity>
+  );
+}
+```
+
+**`components/AvisoPermissaoNegada.jsx`** — Origem: 4. Permissões Avançadas, Passo 4.
+
+```javascript
+// components/AvisoPermissaoNegada.jsx
+// Origem: 4. Permissões Avançadas (Passo 4)
+import { View, Text, Button, StyleSheet } from 'react-native';
+import * as Linking from 'expo-linking';
+
+export default function AvisoPermissaoNegada({ recurso, podePedirNovamente = true, aoTentarNovamente }) {
+  return (
+    <View style={styles.caixa}>
+      <Text>Sem acesso {recurso}. Ative nas configurações para usar este recurso.</Text>
+      {podePedirNovamente ? (
+        <Button title="Tentar novamente" onPress={aoTentarNovamente} />
+      ) : (
+        <Button title="Abrir Configurações" onPress={() => Linking.openSettings()} />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  caixa: { backgroundColor: '#fff3e0', borderRadius: 8, padding: 12, gap: 8 },
+});
+```
+
+**`components/RaceMap.jsx`** — Origem: 5. Localização e Mapas (Passos 5-6) + Animações com Reanimated, Passo 1 (fade-in).
+
+```javascript
+// components/RaceMap.jsx
+// Origem: 5. Localização e Mapas (Passos 5 e 6)
+//         + Animações com Reanimated (Passo 1, fade-in ao carregar)
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet } from 'react-native';
+import { WebView } from 'react-native-webview';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { obterMapaCorridaHtml } from '../utils/mapaHtml';
+
+const REGIAO_INICIAL = { latitude: -23.5505, longitude: -46.6333 };
+
+export function RaceMap({ pontos }) {
+  const webviewRef = useRef(null);
+  const pontosEnviadosRef = useRef(0);
+  const [mapaPronto, setMapaPronto] = useState(false);
+  const opacidade = useSharedValue(0);
+
+  const [htmlInicial] = useState(() =>
+    obterMapaCorridaHtml(REGIAO_INICIAL.latitude, REGIAO_INICIAL.longitude)
+  );
+
+  useEffect(() => {
+    if (mapaPronto) {
+      opacidade.value = withTiming(1, { duration: 400 });
+    }
+  }, [mapaPronto]);
+
+  const estiloAnimado = useAnimatedStyle(() => ({
+    opacity: opacidade.value,
+  }));
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!mapaPronto || !webview) return;
+
+    for (let i = pontosEnviadosRef.current; i < pontos.length; i++) {
+      const { latitude, longitude } = pontos[i];
+      webview.injectJavaScript(
+        `window.adicionarPonto && window.adicionarPonto(${latitude}, ${longitude}); true;`
+      );
+    }
+    pontosEnviadosRef.current = pontos.length;
+  }, [pontos, mapaPronto]);
+
+  return (
+    <Animated.View style={[styles.map, estiloAnimado]}>
+      <WebView
+        ref={webviewRef}
+        originWhitelist={['*']}
+        source={{ html: htmlInicial }}
+        style={styles.map}
+        onMessage={(evento) => {
+          if (evento.nativeEvent.data === 'pronto') setMapaPronto(true);
+        }}
+      />
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  map: { flex: 1 },
+});
+```
+
+**`context/AuthContext.jsx`** — Origem: Autenticação e Proteção de Telas, Passo 3.
+
+```javascript
+// context/AuthContext.jsx
+// Origem: Autenticação e Proteção de Telas (Passo 3)
+import { createContext, useContext, useEffect, useState } from 'react';
+import { lerTokenSeguro, salvarTokenSeguro, apagarTokenSeguro } from '../utils/armazenamentoSeguro';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    lerTokenSeguro().then((tokenSalvo) => {
+      setToken(tokenSalvo);
+      setCarregando(false);
+    });
+  }, []);
+
+  async function entrar(email, senha) {
+    // Usuário de teste local, sem depender do reqres.in (Autenticação, Passo 3)
+    if (email === 'teste@teste.com' && senha === '1234') {
+      const tokenLocal = 'token-de-teste-local';
+      await salvarTokenSeguro(tokenLocal);
+      setToken(tokenLocal);
+      return;
+    }
+
+    const resposta = await fetch('https://reqres.in/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: senha }),
+    });
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      throw new Error(dados.error ?? 'Falha no login.');
+    }
+
+    await salvarTokenSeguro(dados.token);
+    setToken(dados.token);
+  }
+
+  async function sair() {
+    await apagarTokenSeguro();
+    setToken(null);
+  }
+
+  return (
+    <AuthContext.Provider value={{ token, carregando, entrar, sair }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+```
+
+**`context/CorridaContext.jsx`** — Origem: 9. Gerenciamento de Estado, Passos 1-3.
+
+```javascript
+// context/CorridaContext.jsx
+// Origem: 9. Gerenciamento de Estado (Context API, Redux) (Passos 1 a 3)
+import { createContext, useContext, useReducer } from 'react';
+
+function corridaReducer(state, action) {
+  switch (action.type) {
+    case 'adicionarPonto':
+      return { ...state, pontos: [...state.pontos, action.ponto] };
+    case 'reiniciar':
+      return { pontos: [] };
+    default:
+      return state;
+  }
+}
+
+const CorridaContext = createContext(null);
+
+export function CorridaProvider({ children }) {
+  const [state, dispatch] = useReducer(corridaReducer, { pontos: [] });
+  return (
+    <CorridaContext.Provider value={{ state, dispatch }}>
+      {children}
+    </CorridaContext.Provider>
+  );
+}
+
+export function useCorrida() {
+  return useContext(CorridaContext);
+}
+```
+
+> Nota: `useTracking` (abaixo) guarda `pontos` com `useState` local, próprio da tela `corrida.jsx` — trocá-lo por `CorridaProvider`/`useCorrida` (para que `historico.jsx` também veja a corrida em andamento) é exatamente o Exercício Médio proposto no Tópico 9.
+
+**`hooks/useTracking.js`** — Origem: 5. Localização e Mapas, Passos 1-3.
+
+```javascript
+// hooks/useTracking.js
+// Origem: 5. Localização e Mapas (Passos 1 a 3)
+import { useRef, useState } from 'react';
+import * as Location from 'expo-location';
+
+export function useTracking() {
+  const [pontos, setPontos] = useState([]);
+  const [rastreando, setRastreando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const assinaturaRef = useRef(null);
+
+  async function iniciar() {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setErro('Permissão de localização negada. Ative-a nas configurações do app para rastrear.');
+      return;
+    }
+
+    setErro(null);
+    setPontos([]);
+    setRastreando(true);
+
+    assinaturaRef.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 3000,
+        distanceInterval: 5,
+      },
+      (posicao) => {
+        setPontos((anteriores) => [...anteriores, posicao.coords]);
+      }
+    );
+  }
+
+  function parar() {
+    assinaturaRef.current?.remove();
+    assinaturaRef.current = null;
+    setRastreando(false);
+  }
+
+  return { pontos, rastreando, erro, iniciar, parar };
+}
+```
+
+**`utils/calculos.js`** — Origem: 3. Concorrência e Threads, Passos 1-3.
+
+```javascript
+// utils/calculos.js
+// Origem: 3. Concorrência e Threads (Passos 1 a 3)
+export function distanciaEntre(p1, p2) {
+  const R = 6371000;
+  const rad = Math.PI / 180;
+  const dLat = (p2.latitude - p1.latitude) * rad;
+  const dLon = (p2.longitude - p1.longitude) * rad;
+  const lat1 = p1.latitude * rad;
+  const lat2 = p2.latitude * rad;
+
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+export function distanciaTotal(pontos) {
+  let soma = 0;
+  for (let i = 1; i < pontos.length; i++) {
+    soma += distanciaEntre(pontos[i - 1], pontos[i]);
+  }
+  return soma;
+}
+
+export function distanciaTotalEmLotes(pontos, aoTerminar, tamanhoDoLote = 50_000) {
+  let soma = 0;
+  let i = 1;
+
+  function proximoLote() {
+    const fim = Math.min(i + tamanhoDoLote, pontos.length);
+    for (; i < fim; i++) soma += distanciaEntre(pontos[i - 1], pontos[i]);
+
+    if (i < pontos.length) {
+      setTimeout(proximoLote, 0);
+    } else {
+      aoTerminar(soma);
+    }
+  }
+
+  proximoLote();
+}
+```
+
+**`utils/mapaHtml.js`** — Origem: 5. Localização e Mapas, Passo 4.
+
+```javascript
+// utils/mapaHtml.js
+// Origem: 5. Localização e Mapas (Passo 4)
+export function obterMapaCorridaHtml(latitudeInicial, longitudeInicial) {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { height: 100vh; width: 100vw; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map').setView([${latitudeInicial}, ${longitudeInicial}], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    var rota = L.polyline([], { color: '#2196F3', weight: 4 }).addTo(map);
+    var marcador = null;
+
+    window.adicionarPonto = function (lat, lon) {
+      var ponto = [lat, lon];
+      rota.addLatLng(ponto);
+      if (marcador) {
+        marcador.setLatLng(ponto);
+      } else {
+        marcador = L.marker(ponto, { title: 'Posição atual' }).addTo(map);
+      }
+      map.panTo(ponto);
+    };
+
+    window.ReactNativeWebView.postMessage('pronto');
+  </script>
+</body>
+</html>
+`;
+}
+```
+
+**`utils/armazenamentoSeguro.js`** — Origem: Autenticação e Proteção de Telas, Passo 2.
+
+```javascript
+// utils/armazenamentoSeguro.js
+// Origem: Autenticação e Proteção de Telas (Passo 2)
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+
+const CHAVE_TOKEN = 'corrida_token';
+
+export async function salvarTokenSeguro(token) {
+  if (Platform.OS === 'web') {
+    localStorage.setItem(CHAVE_TOKEN, token);
+    return;
+  }
+  await SecureStore.setItemAsync(CHAVE_TOKEN, token);
+}
+
+export async function lerTokenSeguro() {
+  if (Platform.OS === 'web') {
+    return localStorage.getItem(CHAVE_TOKEN);
+  }
+  return SecureStore.getItemAsync(CHAVE_TOKEN);
+}
+
+export async function apagarTokenSeguro() {
+  if (Platform.OS === 'web') {
+    localStorage.removeItem(CHAVE_TOKEN);
+    return;
+  }
+  await SecureStore.deleteItemAsync(CHAVE_TOKEN);
+}
+```
+
+**`utils/exportarHistorico.js`** — Origem: 7. Armazenamento Local, Passo 5.
+
+```javascript
+// utils/exportarHistorico.js
+// Origem: 7. Armazenamento Local no Framework (Passo 5)
+import { File, Paths } from 'expo-file-system';
+
+export function exportarHistoricoComoJson(corridas) {
+  const arquivo = new File(Paths.document, 'historico-corridas.json');
+  arquivo.write(JSON.stringify(corridas, null, 2));
+  return arquivo.uri;
+}
+```
+
+**`utils/useAcelerometro.js`** e **`utils/useDetectorDeChacoalhada.js`** — Origem: 6. Acesso a Recursos Nativos, Passos 1-3.
+
+```javascript
+// utils/useAcelerometro.js
+// Origem: 6. Acesso a Recursos Nativos via Framework (Passos 1 e 2)
+import { Accelerometer } from 'expo-sensors';
+import { useEffect, useState } from 'react';
+
+export function useAcelerometro(intervaloMs = 200) {
+  const [dados, setDados] = useState({ x: 0, y: 0, z: 0 });
+  const [disponivel, setDisponivel] = useState(false);
+
+  useEffect(() => {
+    let assinatura;
+    let cancelado = false;
+
+    Accelerometer.isAvailableAsync().then((temSensor) => {
+      if (cancelado) return;
+      setDisponivel(temSensor);
+      if (!temSensor) return;
+
+      Accelerometer.setUpdateInterval(intervaloMs);
+      assinatura = Accelerometer.addListener(setDados);
+    });
+
+    return () => {
+      cancelado = true;
+      assinatura?.remove();
+    };
+  }, [intervaloMs]);
+
+  return { ...dados, disponivel };
+}
+```
+
+```javascript
+// utils/useDetectorDeChacoalhada.js
+// Origem: 6. Acesso a Recursos Nativos via Framework (Passo 3)
+import { useEffect, useRef } from 'react';
+import { useAcelerometro } from './useAcelerometro';
+
+export function useDetectorDeChacoalhada(aoChacoalhar, limiar = 2.5) {
+  const { x, y, z } = useAcelerometro();
+  const ultimaChacoalhada = useRef(0);
+
+  useEffect(() => {
+    const forca = Math.sqrt(x * x + y * y + z * z);
+    const agora = Date.now();
+
+    if (forca > limiar && agora - ultimaChacoalhada.current > 1000) {
+      ultimaChacoalhada.current = agora;
+      aoChacoalhar();
+    }
+  }, [x, y, z, limiar]);
+}
+```
+
+**`utils/informacoesDoDispositivo.js`** e o módulo nativo — Origem: "Chamando código nativo (Kotlin/Java)", Passos 3-4. Diferente do resto deste apêndice (só reorganizado a partir do que já tinha sido mostrado), este módulo foi gerado do zero com `npx create-expo-module@latest --local` dentro do próprio `app-de-corrida/`, depois prebuilado e compilado de verdade com `./gradlew :informacoes-do-dispositivo:compileDebugKotlin` — `BUILD SUCCESSFUL`, com o `.class` do módulo gerado em `android/build/tmp/kotlin-classes/debug/`.
+
+```javascript
+// utils/informacoesDoDispositivo.js
+// Origem: Chamando código nativo (Kotlin/Java) a partir do React Native (Passo 4)
+import InformacoesDoDispositivo from '../modules/informacoes-do-dispositivo/src/InformacoesDoDispositivoModule';
+
+export function lerNivelDeBateriaBruto() {
+  return InformacoesDoDispositivo.nivelDeBateriaBruto();
+}
+```
+
+```kotlin
+// modules/informacoes-do-dispositivo/android/src/main/java/expo/modules/informacoesdodispositivo/InformacoesDoDispositivoModule.kt
+// Origem: Chamando código nativo (Kotlin/Java) a partir do React Native (Passo 3)
+package expo.modules.informacoesdodispositivo
+
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+
+class InformacoesDoDispositivoModule : Module() {
+  override fun definition() = ModuleDefinition {
+    Name("InformacoesDoDispositivo")
+
+    Function("nivelDeBateriaBruto") {
+      return@Function 87
+    }
+  }
+}
+```
+
+**`servidor-rotas/index.js`** — projeto Node separado. Origem: "Criando sua própria API (Node.js/Express) e autenticação com JWT", Passos 2, 4 e 5 juntos (verificado de verdade rodando `node index.js` + `curl` naquele tópico).
+
+```javascript
+// servidor-rotas/index.js
+// Origem: Criando sua própria API (Node.js/Express) e autenticação com JWT (Passos 2, 4 e 5)
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const SEGREDO = 'troque-isso-por-uma-variavel-de-ambiente-em-producao';
+
+const ROTAS_PLANEJADAS = [
+  { id: '1', nome: 'Volta do parque', distanciaEstimadaKm: 3.2 },
+  { id: '2', nome: 'Orla da praia', distanciaEstimadaKm: 5.8 },
+];
+
+app.get('/rotas', (req, res) => {
+  res.json(ROTAS_PLANEJADAS);
+});
+
+app.post('/login', (req, res) => {
+  const { email, senha } = req.body;
+
+  if (email === 'atleta@exemplo.com' && senha === '123456') {
+    const token = jwt.sign({ email }, SEGREDO, { expiresIn: '1h' });
+    return res.json({ token });
+  }
+
+  res.status(401).json({ erro: 'E-mail ou senha inválidos.' });
+});
+
+function exigirToken(req, res, next) {
+  const cabecalho = req.headers.authorization;
+  const token = cabecalho?.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ erro: 'Token não enviado.' });
+  }
+
+  try {
+    req.usuario = jwt.verify(token, SEGREDO);
+    next();
+  } catch {
+    res.status(401).json({ erro: 'Token inválido ou expirado.' });
+  }
+}
+
+app.post('/corridas', exigirToken, (req, res) => {
+  const { distancia, duracao } = req.body;
+  res.status(201).json({ mensagem: `Corrida de ${req.usuario.email} salva.`, distancia, duracao });
+});
+
+app.listen(3000, () => console.log('Servidor rodando em http://localhost:3000'));
+```
+
+**Pacotes usados no app inteiro** (todos instaláveis com `npx expo install <pacote>`, exceto os do servidor, que usam `npm install`): `expo-router`, `expo-location`, `react-native-webview`, `expo-image`, `expo-audio`, `react-native-reanimated`, `react-native-worklets`, `expo-sensors`, `expo-haptics`, `expo-sqlite`, `@react-native-async-storage/async-storage`, `expo-file-system`, `react-native-gifted-charts`, `expo-linear-gradient`, `react-native-svg`, `expo-notifications`, `expo-constants`, `@tanstack/react-query`, `axios`, `expo-contacts`, `expo-linking`, `expo-secure-store`. No servidor: `express`, `cors`, `jsonwebtoken`.
