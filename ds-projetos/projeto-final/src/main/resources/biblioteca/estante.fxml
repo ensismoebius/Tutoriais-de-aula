@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox spacing="10" xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="biblioteca.controller.EstanteController"
+      style="-fx-padding: 10;">
+    <HBox spacing="10">
+        <ComboBox fx:id="comboCategoria" promptText="Categoria"/>
+        <TextField fx:id="campoTitulo" promptText="Título"/>
+        <TextField fx:id="campoAno" promptText="Ano"/>
+        <TextField fx:id="campoAvaliacao" promptText="Avaliação (0-5)"/>
+        <TextField fx:id="campoExtra1" promptText="Autor / Diretor"/>
+        <TextField fx:id="campoExtra2" promptText="Páginas / Duração"/>
+        <Button fx:id="btnSalvar" text="Salvar" onAction="#aoClicarSalvar"/>
+    </HBox>
+    <TableView fx:id="tabela">
+        <columns>
+            <TableColumn fx:id="colCategoria" text="Categoria"/>
+            <TableColumn fx:id="colTitulo" text="Título"/>
+            <TableColumn fx:id="colAno" text="Ano"/>
+            <TableColumn fx:id="colAvaliacao" text="Avaliação"/>
+        </columns>
+    </TableView>
+    <HBox spacing="10">
+        <Button fx:id="btnExcluir" text="Excluir selecionado" onAction="#aoClicarExcluir"/>
+        <Label fx:id="labelResumo"/>
+    </HBox>
+</VBox>

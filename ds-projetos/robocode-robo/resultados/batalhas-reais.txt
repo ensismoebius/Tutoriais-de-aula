@@ -1,0 +1,26 @@
+Loaded net.sf.robocode.api
+Loaded net.sf.robocode.core
+Loaded net.sf.robocode.ui.editor
+Loaded net.sf.robocode.ui
+Loaded net.sf.robocode.battle
+Loaded net.sf.robocode.repository
+Loaded net.sf.robocode.host
+Loaded net.sf.robocode.sound
+Loading plugins from /home/ensismoebius/robocode/libs
+Initializing version check date.
+=== MeuRobo vs sample.Corners (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=   390 survival=     0 bulletDmg=   390 ramDmg=     0 1st= 0 2nd=10 3rd= 0
+sample.Corners            score=  1424 survival=   500 bulletDmg=   687 ramDmg=     0 1st=10 2nd= 0 3rd= 0
+
+=== MeuRobo vs sample.Crazy (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=   468 survival=   100 bulletDmg=   323 ramDmg=     8 1st= 2 2nd= 8 3rd= 0
+sample.Crazy              score=  1036 survival=   400 bulletDmg=   455 ramDmg=    20 1st= 8 2nd= 2 3rd= 0
+
+=== MeuRobo vs sample.Walls (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=   613 survival=    50 bulletDmg=   387 ramDmg=   146 1st= 1 2nd= 9 3rd= 0
+sample.Walls              score=  1422 survival=   450 bulletDmg=   728 ramDmg=    17 1st= 9 2nd= 1 3rd= 0
+
+=== MeuRobo vs sample.RamFire (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=  1554 survival=   350 bulletDmg=   849 ramDmg=   142 1st= 7 2nd= 3 3rd= 0
+sample.RamFire            score=   619 survival=   150 bulletDmg=   294 ramDmg=    82 1st= 3 2nd= 7 3rd= 0
+

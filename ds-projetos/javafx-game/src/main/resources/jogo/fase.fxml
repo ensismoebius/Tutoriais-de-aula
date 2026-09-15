@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox spacing="10" xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="jogo.controller.FaseController"
+      style="-fx-padding: 10;">
+    <HBox spacing="10">
+        <TextField fx:id="campoNome" promptText="Nome"/>
+        <TextField fx:id="campoDificuldade" promptText="Dificuldade (1-5)"/>
+        <TextField fx:id="campoGravidade" promptText="Gravidade"/>
+        <Button fx:id="btnSalvar" text="Salvar" onAction="#aoClicarSalvar"/>
+    </HBox>
+    <TableView fx:id="tabela">
+        <columns>
+            <TableColumn fx:id="colNome" text="Nome"/>
+            <TableColumn fx:id="colDificuldade" text="Dificuldade"/>
+            <TableColumn fx:id="colGravidade" text="Gravidade"/>
+        </columns>
+    </TableView>
+    <Button fx:id="btnExcluir" text="Excluir selecionada" onAction="#aoClicarExcluir"/>
+</VBox>
