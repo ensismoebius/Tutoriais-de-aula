@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "Gerenciador de Tarefas — API",
+    "description": "Sequência do Tópico 15 (Projeto Final): listar, criar, validar, atualizar e excluir tarefas via /api/tarefas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000" },
+    { "key": "tarefaId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Listar tarefas (index)",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/api/tarefas", "host": ["{{baseUrl}}"], "path": ["api", "tarefas"] }
+      }
+    },
+    {
+      "name": "2. Criar tarefa sem titulo (422 esperado)",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 422', () => pm.response.to.have.status(422));",
+        "pm.test('mensagem de erro do campo titulo', () => pm.expect(pm.response.json().errors).to.have.property('titulo'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"prazo\":\"2027-01-01\",\"tipo\":\"rotina\"}" },
+        "url": { "raw": "{{baseUrl}}/api/tarefas", "host": ["{{baseUrl}}"], "path": ["api", "tarefas"] }
+      }
+    },
+    {
+      "name": "3. Criar tarefa valida (201 esperado)",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 201', () => pm.response.to.have.status(201));",
+        "const json = pm.response.json();",
+        "pm.collectionVariables.set('tarefaId', json.data.id);",
+        "pm.test('urgente calculado presente', () => pm.expect(json.data).to.have.property('urgente'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"titulo\":\"Tarefa via Postman\",\"prazo\":\"2027-01-01\",\"tipo\":\"rotina\"}" },
+        "url": { "raw": "{{baseUrl}}/api/tarefas", "host": ["{{baseUrl}}"], "path": ["api", "tarefas"] }
+      }
+    },
+    {
+      "name": "4. Atualizar tarefa (200 esperado)",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"titulo\":\"Tarefa via Postman (atualizada)\"}" },
+        "url": { "raw": "{{baseUrl}}/api/tarefas/{{tarefaId}}", "host": ["{{baseUrl}}"], "path": ["api", "tarefas", "{{tarefaId}}"] }
+      }
+    },
+    {
+      "name": "5. Excluir tarefa (204 esperado)",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 204', () => pm.response.to.have.status(204));"
+      ]}}],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/api/tarefas/{{tarefaId}}", "host": ["{{baseUrl}}"], "path": ["api", "tarefas", "{{tarefaId}}"] }
+      }
+    }
+  ]
+}
