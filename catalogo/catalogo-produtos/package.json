@@ -1,0 +1,36 @@
+{
+  "name": "catalogo-produtos",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "API REST do catálogo de produtos — projeto de referência do Tutorial_PWIII.md",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "prisma db seed"
+  },
+  "keywords": [],
+  "dependencies": {
+    "@prisma/adapter-mariadb": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "axios": "^1.20.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "jsonwebtoken": "^9.0.3",
+    "mariadb": "^3.5.4",
+    "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1",
+    "xmlbuilder2": "^4.0.3"
+  },
+  "devDependencies": {
+    "prisma": "7.10.0",
+    "zod": "4.6.5"
+  },
+  "allowScripts": {
+    "prisma@7.10.0": true,
+    "@prisma/engines@7.10.0": true
+  }
+}

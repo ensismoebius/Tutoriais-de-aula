@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Produto {
+  id          Int        @id @default(autoincrement())
+  nome        String
+  sku         String     @unique
+  preco       Decimal    @db.Decimal(10, 2)
+  estoque     Int        @default(0)
+  categoriaId Int?
+  categoria   Categoria? @relation(fields: [categoriaId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("produtos")
+}
+
+model Categoria {
+  id       Int       @id @default(autoincrement())
+  nome     String    @unique
+  produtos Produto[]
+
+  @@map("categorias")
+}
+
+model Usuario {
+  id        Int    @id @default(autoincrement())
+  nome      String
+  email     String @unique
+  senhaHash String
+
+  @@map("usuarios")
+}

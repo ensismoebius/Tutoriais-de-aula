@@ -1,0 +1,10 @@
+{
+  "produtos": {
+    "titulo": "Catálogo de Produtos",
+    "preco": "Preço",
+    "estoque": "{{quantidade}} em estoque",
+    "novo": "Novo produto",
+    "nome": "Nome",
+    "criar": "Criar"
+  }
+}
