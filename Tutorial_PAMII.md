@@ -2872,7 +2872,7 @@ Preencha descrição, screenshots e política de privacidade, e envie para revis
 Este é o app de corrida montado por inteiro, juntando o resultado final de cada tópico anterior num único projeto — cada arquivo abaixo traz um comentário no topo apontando de qual(is) tópico(s) ele veio, para servir de referência rápida caso algum trecho pareça desconectado do resto. É o mesmo código já apresentado ao longo do tutorial, sem nenhuma novidade — só organizado junto, como ficaria numa cópia real do projeto.
 
 ```
-app-de-corrida/
+pamii-projetos/
 ├── app/
 │   ├── _layout.jsx
 │   ├── login.jsx
@@ -3939,7 +3939,7 @@ export function useDetectorDeChacoalhada(aoChacoalhar, limiar = 2.5) {
 }
 ```
 
-**`utils/informacoesDoDispositivo.js`** e o módulo nativo — Origem: "Chamando código nativo (Kotlin/Java)", Passos 3-4. Diferente do resto deste apêndice (só reorganizado a partir do que já tinha sido mostrado), este módulo foi gerado do zero com `npx create-expo-module@latest --local` dentro do próprio `app-de-corrida/`, depois prebuilado e compilado de verdade com `./gradlew :informacoes-do-dispositivo:compileDebugKotlin` — `BUILD SUCCESSFUL`, com o `.class` do módulo gerado em `android/build/tmp/kotlin-classes/debug/`.
+**`utils/informacoesDoDispositivo.js`** e o módulo nativo — Origem: "Chamando código nativo (Kotlin/Java)", Passos 3-4. Diferente do resto deste apêndice (só reorganizado a partir do que já tinha sido mostrado), este módulo foi gerado do zero com `npx create-expo-module@latest --local` dentro do próprio `pamii-projetos/`, depois prebuilado e compilado de verdade com `./gradlew :informacoes-do-dispositivo:compileDebugKotlin` — `BUILD SUCCESSFUL`, com o `.class` do módulo gerado em `android/build/tmp/kotlin-classes/debug/`.
 
 ```javascript
 // utils/informacoesDoDispositivo.js
