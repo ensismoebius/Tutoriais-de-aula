@@ -107,6 +107,15 @@ php artisan serve
 
 **✅ Checkpoint:** `http://localhost:8000` mostra a tela padrão do Laravel.
 
+> 💡 Se você for usar um assistente de IA (Claude Code, Cursor, e outros) para ajudar a construir este projeto, considere instalar o **Laravel Boost** — um pacote oficial do próprio time do Laravel, feito exatamente para isso. Ele expõe, via MCP, ferramentas específicas do seu projeto (rodar `tinker`, consultar o schema do banco, buscar na documentação da versão exata do Laravel instalada, entre outras) e gera um `AGENTS.md`/`CLAUDE.md` com boas práticas específicas do ecossistema Laravel — reduzindo o risco de o assistente sugerir uma API de uma versão diferente da que está instalada aqui. É opcional, não faz parte do currículo, e não muda nada no código do projeto em si:
+>
+> ```bash
+> composer require laravel/boost --dev
+> php artisan boost:install
+> ```
+>
+> O instalador pergunta quais assistentes de IA você usa e configura cada um automaticamente.
+
 ### Passo 3 — formulário de inscrição na newsletter
 
 Gere o controller:
@@ -2128,6 +2137,8 @@ Colocar a validação no construtor garante que **nenhum** objeto `Tarefa` invá
 composer create-project laravel/laravel task-manager
 cd task-manager
 ```
+
+> 💡 Se você instalou o **Laravel Boost** no `blog-app` (Tópico 1) e quer o mesmo suporte de IA aqui, é por projeto — repita `composer require laravel/boost --dev` e `php artisan boost:install` dentro deste novo projeto `task-manager`.
 
 Ajuste o `.env` para MySQL (mesmo padrão dos tópicos anteriores, com um banco próprio — por exemplo `task_manager`, para não misturar com os dados do `blog-app`):
 
