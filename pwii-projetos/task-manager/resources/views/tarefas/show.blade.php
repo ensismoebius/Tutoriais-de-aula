@@ -14,6 +14,12 @@
 
     <a href="{{ route('tarefas.edit', $tarefa) }}">Editar</a>
 
+    <form method="POST" action="{{ route('tarefas.concluir', $tarefa) }}">
+        @csrf
+        @method('PATCH')
+        <button type="submit">{{ $tarefa->concluida ? 'Reabrir' : 'Marcar como concluída' }}</button>
+    </form>
+
     <form method="POST" action="{{ route('tarefas.destroy', $tarefa) }}">
         @csrf
         @method('DELETE')

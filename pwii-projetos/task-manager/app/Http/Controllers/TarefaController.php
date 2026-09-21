@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\DAO\TarefaDAOInterface;
+use App\Models\Configuracao;
 use App\Models\Tarefa;
 use Illuminate\Http\Request;
 
@@ -12,7 +13,7 @@ class TarefaController extends Controller
 
     public function index()
     {
-        $tarefas = Tarefa::orderByDesc('prazo')->paginate(10);
+        $tarefas = Tarefa::orderByDesc('prazo')->paginate(Configuracao::atual()->tarefas_por_pagina);
         $urgentes = $tarefas->getCollection()->filter->isUrgente();
 
         return view('tarefas.index', compact('tarefas', 'urgentes'));

@@ -2448,7 +2448,7 @@ Route::resource('tarefas', TarefaController::class);
 
 ## 9. Implementação de Controller
 
-**Objetivo:** implementar o `TarefaController` completo com os 7 métodos RESTful convencionais.
+**Objetivo:** implementar o `TarefaController` completo com os 7 métodos RESTful convencionais, e conhecer os outros tipos de Controller que o Laravel reconhece por convenção — Invokable e Singleton — além do Resource já usado e do API Controller do Tópico 14.
 
 Laravel 13.21. Continuação do "Gerenciador de Tarefas".
 
@@ -2567,6 +2567,134 @@ Navegadores só enviam GET/POST nativamente — `@method('DELETE')` insere um ca
 
 **✅ Checkpoint:** você recita de cabeça a correspondência entre pelo menos 4 desses métodos e seus verbos.
 
+### Passo 6 — Invokable Controller: quando o Controller faz só uma coisa
+
+`TarefaController` tem 7 métodos porque uma tarefa tem 7 operações convencionais. Mas nem toda ação do sistema é assim — "marcar uma tarefa como concluída" é uma ação só, sem `create`/`edit` (não existe formulário de "concluir"), sem `index` (não lista nada), sem `show` (não exibe nada sozinha). Forçar essa ação a morar dentro de `TarefaController` como um oitavo método (`concluir()`, sem correspondência com nenhum dos 7 verbos RESTful) mistura duas responsabilidades diferentes na mesma classe. Um **Invokable Controller** resolve isso: uma classe, um único método `__invoke()`, nomeada pelo verbo que ela executa em vez de pelo recurso que ela gerencia.
+
+```bash
+php artisan make:controller MarcarTarefaConcluidaController --invokable
+```
+
+O `--invokable` gera a classe já com a assinatura certa — em vez de vários métodos (`index`, `show`, etc.), só existe `__invoke()`:
+
+```php
+class MarcarTarefaConcluidaController extends Controller
+{
+    public function __invoke(Tarefa $tarefa)
+    {
+        $tarefa->update(['concluida' => ! $tarefa->concluida]);
+
+        return redirect()->route('tarefas.show', $tarefa);
+    }
+}
+```
+
+`__invoke` é um método mágico do PHP: quando uma classe o define, uma instância dessa classe pode ser chamada diretamente como se fosse uma função (`$controller($tarefa)`). É essa característica da linguagem, não uma convenção só do Laravel, que faz o roteamento funcionar sem precisar dizer qual método chamar — só existe um.
+
+Registre a rota apontando direto para a classe, sem `::class, 'metodo'`:
+
+```php
+Route::patch('tarefas/{tarefa}/concluir', MarcarTarefaConcluidaController::class)->name('tarefas.concluir');
+```
+
+Repare que a rota ainda é RESTful no sentido amplo (usa `PATCH`, o verbo de atualização parcial, e recebe `{tarefa}` via route model binding, igual a qualquer método de `TarefaController`) — o que muda é só que ela não faz parte do conjunto fixo de 7 rotas do `Route::resource`, e por isso precisa ser declarada à parte.
+
+**✅ Checkpoint:** `PATCH /tarefas/{id}/concluir` alterna o campo `concluida` da tarefa e redireciona de volta para a página de detalhes.
+
+### Passo 7 — Singleton Controller: quando só existe UM registro
+
+Até aqui, todo Controller construído neste tutorial lida com uma **coleção** de registros — vários posts, várias tarefas, cada um com seu próprio `id` na URL. Mas alguns recursos do sistema não são assim: as configurações do "Gerenciador de Tarefas" (por exemplo, quantas tarefas aparecem por página) não têm uma lista, nem um `id` — existe exatamente **uma** configuração, sempre a mesma, para o sistema inteiro. Esse tipo de recurso é chamado de **singleton** (mesmo termo do padrão de projeto: uma classe da qual só existe uma instância), e o Laravel reconhece essa convenção com seu próprio tipo de Controller.
+
+Primeiro, o Model e a migration — a tabela de configurações já nasce com uma linha, em vez de esperar um primeiro cadastro:
+
+```php
+Schema::create('configuracoes', function (Blueprint $table) {
+    $table->id();
+    $table->unsignedTinyInteger('tarefas_por_pagina')->default(10);
+    $table->timestamps();
+});
+
+DB::table('configuracoes')->insert(['tarefas_por_pagina' => 10, 'created_at' => now(), 'updated_at' => now()]);
+```
+
+```php
+class Configuracao extends Model
+{
+    protected $table = 'configuracoes';
+    protected $fillable = ['tarefas_por_pagina'];
+
+    // Um Controller Singleton não recebe id nenhum vindo da URL — ele
+    // precisa de um jeito de sempre encontrar "a" configuração sozinho.
+    public static function atual(): self
+    {
+        return static::firstOrCreate([], ['tarefas_por_pagina' => 10]);
+    }
+}
+```
+
+`firstOrCreate([], [...])` busca a primeira linha da tabela e, se não existir nenhuma, cria uma com os valores padrão — uma segunda garantia de que "a" configuração sempre existe, mesmo que a migration nunca tivesse inserido a linha inicial.
+
+Agora o Controller:
+
+```bash
+php artisan make:controller ConfiguracaoController --singleton
+```
+
+O `--singleton` gera só três métodos — `show`, `edit`, `update` — sem `index`, `create`, `store` nem `destroy`. Faz sentido: não existe "lista de configurações" para paginar, não existe "criar uma nova configuração" (a única já existe desde a migration), e não existe "excluir a configuração" (o sistema sempre precisa de uma).
+
+```php
+class ConfiguracaoController extends Controller
+{
+    public function show()
+    {
+        return view('configuracoes.show', ['configuracao' => Configuracao::atual()]);
+    }
+
+    public function edit()
+    {
+        return view('configuracoes.edit', ['configuracao' => Configuracao::atual()]);
+    }
+
+    public function update(Request $request)
+    {
+        $dados = $request->validate(['tarefas_por_pagina' => 'required|integer|min:1|max:100']);
+        Configuracao::atual()->update($dados);
+
+        return redirect()->route('configuracoes.show')->with('sucesso', 'Configurações salvas!');
+    }
+}
+```
+
+Repare na diferença central em relação a `TarefaController::show(Tarefa $tarefa)`: ali, o Laravel injeta a tarefa certa via route model binding, porque o `id` vem da URL (`/tarefas/3`). Aqui não há `id` nenhum na URL — é por isso que `show()`/`edit()`/`update()` não recebem nenhum parâmetro de Model, e o Controller precisa saber, sozinho, encontrar "a" configuração através de `Configuracao::atual()`.
+
+Registre a rota com `Route::singleton`, o equivalente singular de `Route::resource`:
+
+```php
+Route::singleton('configuracoes', ConfiguracaoController::class);
+```
+
+```bash
+php artisan route:list --name=configuracoes
+```
+
+```
+GET|HEAD   configuracoes ................ configuracoes.show
+PUT|PATCH  configuracoes ................ configuracoes.update
+GET|HEAD   configuracoes/edit ........... configuracoes.edit
+```
+
+Três rotas, nenhuma com `{configuracoes}` — a ausência do parâmetro na URL é a assinatura visual de um recurso singleton, bem diferente das 7 rotas de `/tarefas/{tarefa}` geradas pelo `Route::resource` do Passo 5.
+
+Para fechar o ciclo, use a configuração de verdade em vez de um número fixo — troque o `paginate(10)` que `TarefaController::index()` usa desde o Tópico 8:
+
+```php
+$tarefas = Tarefa::orderByDesc('prazo')->paginate(Configuracao::atual()->tarefas_por_pagina);
+```
+
+**✅ Checkpoint:** `GET /configuracoes` mostra o valor atual; editar e salvar em `/configuracoes/edit` muda o número de tarefas por página da listagem, sem passar por nenhuma URL com `id`.
+
+> Se a tela de configurações no seu sistema real também precisasse de uma ação de "restaurar padrões" (recriar o registro do zero), o Laravel permite isso com `Route::singleton(...)->creatable()`, que acrescenta rotas de `store`/`destroy` a um singleton — este tutorial não usa, porque não há necessidade real de "criar" ou "apagar" a única configuração do sistema, só de editá-la.
+
 ### Resumo do que você construiu
 
 ```
@@ -2575,6 +2703,9 @@ Navegadores só enviam GET/POST nativamente — `@method('DELETE')` insere um ca
 ✅ edit/update atualizando só os campos validados
 ✅ destroy com method spoofing (@method('DELETE')) mantendo rota RESTful
 ✅ Mapa completo dos 7 métodos convencionais e seus verbos HTTP
+✅ Invokable Controller (--invokable) para uma ação isolada, sem recurso associado
+✅ Singleton Controller (--singleton) para um recurso do qual só existe uma instância
+✅ paginate() usando um valor configurável em vez de um número fixo no código
 ```
 
 ### Exercícios
@@ -2582,12 +2713,16 @@ Navegadores só enviam GET/POST nativamente — `@method('DELETE')` insere um ca
 1. **Autorização**: adicione um middleware garantindo que só o dono edite/exclua a tarefa.
 2. **Flash de erro**: mostre uma mensagem se `update()` falhar.
 3. **Soft deletes**: pesquise o trait `SoftDeletes` como alternativa a excluir permanentemente.
+4. **Outro Invokable**: crie `DuplicarTarefaController`, uma ação de "duplicar" que cria uma cópia da tarefa com `concluida = false`.
+5. **Singleton criatável**: pesquise `Route::singleton(...)->creatable()` e explique um cenário (fora deste projeto) onde faria sentido permitir recriar um recurso singleton.
 
 ### Perguntas de fixação
 
 1. Por que `show(Tarefa $tarefa)` não precisa de `Tarefa::findOrFail($id)` explícito?
 2. O que aconteceria se `destroy()` fosse acessível via link `<a href="...">`, em vez de um formulário POST com `@method('DELETE')`?
 3. Por que `store()` usa `redirect()->route(...)` em vez de simplesmente devolver a view da listagem diretamente?
+4. Por que `MarcarTarefaConcluidaController` não faz sentido como um oitavo método dentro de `TarefaController`, mesmo recebendo o mesmo tipo de parâmetro (`Tarefa $tarefa`) que `show`/`edit`/`update` já recebem?
+5. Por que `ConfiguracaoController::show()` não pode usar route model binding do mesmo jeito que `TarefaController::show(Tarefa $tarefa)` usa?
 
 ---
 
@@ -3273,7 +3408,7 @@ php artisan make:controller Api/TarefaController --api
 Route::apiResource('tarefas', \App\Http\Controllers\Api\TarefaController::class);
 ```
 
-`--api` gera um controller sem `create`/`edit` (rotas que só fazem sentido para views HTML) — só os 5 métodos que fazem sentido numa API JSON. `apiResource` registra as rotas correspondentes automaticamente.
+`--api` gera um controller sem `create`/`edit` (rotas que só fazem sentido para views HTML) — só os 5 métodos que fazem sentido numa API JSON. `apiResource` registra as rotas correspondentes automaticamente. Este é o quarto tipo de Controller que o Laravel reconhece por convenção, ao lado do Resource completo (Tópico 8), do Invokable e do Singleton (ambos no Tópico 9) — cada um recorta o mesmo conjunto de 7 métodos convencionais de um jeito diferente, dependendo do formato do recurso e de quem consome a rota.
 
 **✅ Checkpoint:** `php artisan route:list --name=api` mostra 5 rotas para tarefas.
 
@@ -3511,17 +3646,22 @@ task-manager/
 ├── routes/
 │   ├── web.php                          ← Tópico 8 (Route::resource)
 │   └── api.php                          ← Tópico 14 (Route::apiResource)
+├── database/migrations/
+│   └── ..._create_configuracoes_table.php ← Tópico 9 (singleton, já nasce com uma linha)
 ├── app/
 │   ├── helpers.php                      ← Tópico 11 (formatar_prazo, tempo_restante)
 │   ├── Models/
-│   │   └── Tarefa.php                   ← Tópicos 6/7/8 (isUrgente, calcularPrioridade via match)
+│   │   ├── Tarefa.php                   ← Tópicos 6/7/8 (isUrgente, calcularPrioridade via match)
+│   │   └── Configuracao.php             ← Tópico 9 (atual(), acessor do singleton)
 │   ├── DAO/
 │   │   ├── TarefaDAOInterface.php       ← Tópico 12
 │   │   └── TarefaDAO.php                ← Tópico 12
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── TarefaController.php     ← Tópicos 8/9/12 (7 métodos RESTful via DAO)
-│   │   │   └── Api/TarefaController.php ← Tópico 14 (5 métodos JSON)
+│   │   │   ├── TarefaController.php               ← Tópicos 8/9/12 (7 métodos RESTful via DAO)
+│   │   │   ├── MarcarTarefaConcluidaController.php ← Tópico 9 (Invokable, --invokable)
+│   │   │   ├── ConfiguracaoController.php          ← Tópico 9 (Singleton, --singleton)
+│   │   │   └── Api/TarefaController.php            ← Tópico 14 (5 métodos JSON, --api)
 │   │   └── Resources/TarefaResource.php ← Tópico 14
 │   ├── Livewire/
 │   │   ├── TarefaLista.php              ← Tópico 13
@@ -3533,11 +3673,14 @@ task-manager/
     ├── livewire/
     │   ├── tarefa-lista.blade.php       ← Tópico 13
     │   └── tarefa-form.blade.php        ← Tópico 13
-    └── tarefas/
-        ├── index.blade.php              ← Tópicos 9/10/13
-        ├── create.blade.php             ← Tópico 9
-        ├── show.blade.php               ← Tópico 9
-        └── edit.blade.php               ← Tópico 9
+    ├── tarefas/
+    │   ├── index.blade.php              ← Tópicos 9/10/13
+    │   ├── create.blade.php             ← Tópico 9
+    │   ├── show.blade.php               ← Tópico 9 (+ botão "concluir" do Invokable)
+    │   └── edit.blade.php               ← Tópico 9
+    └── configuracoes/
+        ├── show.blade.php               ← Tópico 9 (Singleton)
+        └── edit.blade.php               ← Tópico 9 (Singleton)
 ```
 
-Um usuário navegando pelo `task-manager` de ponta a ponta: abre `/tarefas` (**Controller** `TarefaController@index`, que delega ao `TarefaDAO` — **Model** por trás da interface — e devolve `tarefas/index.blade.php` — **View** — dentro do `layouts.app`, cujo View Composer já injetou `$totalUrgentes` sem o Controller pedir); cada tarefa aparece através do componente `<x-tarefa-card />`, que usa a directive `@urgente` e o helper `formatar_prazo()`; na mesma página, o componente Livewire `TarefaLista` permite marcar tarefas como concluídas com um clique, sem reload; `TarefaForm`, outro componente Livewire, cria tarefas reativamente, validando com `#[Validate(...)]`; em paralelo, `GET /api/tarefas` devolve a mesma informação em JSON, formatada por `TarefaResource`, para consumo por outro programa — prontas para uma eventual apresentação via Postman, como pede o Tópico 15.
+Um usuário navegando pelo `task-manager` de ponta a ponta: abre `/tarefas` (**Controller** `TarefaController@index`, que delega ao `TarefaDAO` — **Model** por trás da interface — pagina usando `Configuracao::atual()->tarefas_por_pagina` e devolve `tarefas/index.blade.php` — **View** — dentro do `layouts.app`, cujo View Composer já injetou `$totalUrgentes` sem o Controller pedir); cada tarefa aparece através do componente `<x-tarefa-card />`, que usa a directive `@urgente` e o helper `formatar_prazo()`; na tela de detalhes, um botão aciona o `MarcarTarefaConcluidaController` (Invokable) para alternar a conclusão sem passar por `TarefaController`; em `/configuracoes`, o `ConfiguracaoController` (Singleton) mostra e edita a única linha de configuração do sistema, sem `id` nenhum na URL; na mesma página de tarefas, o componente Livewire `TarefaLista` permite marcar tarefas como concluídas com um clique, sem reload; `TarefaForm`, outro componente Livewire, cria tarefas reativamente, validando com `#[Validate(...)]`; em paralelo, `GET /api/tarefas` devolve a mesma informação em JSON, formatada por `TarefaResource`, através de um quarto tipo de Controller (`--api`), para consumo por outro programa — prontas para uma eventual apresentação via Postman, como pede o Tópico 15.
