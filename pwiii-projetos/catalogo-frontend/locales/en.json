@@ -6,5 +6,9 @@
     "novo": "New product",
     "nome": "Name",
     "criar": "Create"
+  },
+  "auth": {
+    "saudacao": "Hello, {{nome}}",
+    "loginNecessario": "Sign in with Google to create products"
   }
 }

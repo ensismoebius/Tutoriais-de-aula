@@ -6,5 +6,9 @@
     "novo": "Novo produto",
     "nome": "Nome",
     "criar": "Criar"
+  },
+  "auth": {
+    "saudacao": "Olá, {{nome}}",
+    "loginNecessario": "Faça login com Google para criar produtos"
   }
 }

@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { io } from 'socket.io-client'
+import EntrarComGoogle from './components/EntrarComGoogle.jsx'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const socket = io(API_URL)
 
-async function criarProduto(dados) {
+async function criarProduto(dados, token) {
   const resposta = await fetch(`${API_URL}/produtos`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
     body: JSON.stringify(dados),
   })
 
@@ -51,23 +55,29 @@ function ItemProduto({ produto }) {
   )
 }
 
-function FormularioProduto({ aoCriar }) {
+function FormularioProduto({ aoCriar, token }) {
   const { t } = useTranslation()
   const [nome, setNome] = useState('')
   const [preco, setPreco] = useState('')
+  const [erroCriacao, setErroCriacao] = useState(null)
 
   async function enviar(e) {
     e.preventDefault()
     if (!nome || !preco) return
-    const novoProduto = await criarProduto({
-      nome,
-      sku: `${nome.toUpperCase().replace(/\s+/g, '').slice(0, 5)}-${Date.now()}`,
-      preco: Number(preco),
-      estoque: 0,
-    })
-    aoCriar(novoProduto)
-    setNome('')
-    setPreco('')
+    setErroCriacao(null)
+    try {
+      const novoProduto = await criarProduto({
+        nome,
+        sku: `${nome.toUpperCase().replace(/\s+/g, '').slice(0, 5)}-${Date.now()}`,
+        preco: Number(preco),
+        estoque: 0,
+      }, token)
+      aoCriar(novoProduto)
+      setNome('')
+      setPreco('')
+    } catch {
+      setErroCriacao(t('auth.loginNecessario'))
+    }
   }
 
   return (
@@ -76,6 +86,7 @@ function FormularioProduto({ aoCriar }) {
       <input value={nome} onChange={e => setNome(e.target.value)} placeholder={t('produtos.nome')} />
       <input value={preco} onChange={e => setPreco(e.target.value)} placeholder={t('produtos.preco')} type="number" step="0.01" />
       <button type="submit">{t('produtos.criar')}</button>
+      {erroCriacao && <p>{erroCriacao}</p>}
     </form>
   )
 }
@@ -96,6 +107,8 @@ function App() {
   const [produtos, setProdutos] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
+  const [usuarioLogado, setUsuarioLogado] = useState(null)
+  const [token, setToken] = useState(null)
 
   useEffect(() => {
     fetch(`${API_URL}/produtos`)
@@ -112,6 +125,25 @@ function App() {
     setProdutos(anteriores => [...anteriores, novoProduto])
   }
 
+  async function loginComGoogle(credential) {
+    // O payload do credential já vem no navegador (é só a segunda parte de
+    // um JWT em Base64URL) — decodificá-lo aqui só serve para exibir o nome
+    // na hora; quem valida a assinatura de verdade é o backend, no passo
+    // seguinte.
+    const payloadGoogle = JSON.parse(atob(credential.split('.')[1]))
+
+    const resposta = await fetch(`${API_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    })
+    if (!resposta.ok) return
+
+    const dados = await resposta.json()
+    setUsuarioLogado({ nome: payloadGoogle.name, email: payloadGoogle.email })
+    setToken(dados.token)
+  }
+
   if (carregando) return <p>Carregando...</p>
   if (erro) return <p>Erro: {erro}</p>
 
@@ -119,7 +151,10 @@ function App() {
     <>
       <SeletorIdioma />
       <h1>{t('produtos.titulo')}</h1>
-      <FormularioProduto aoCriar={aoCriarProduto} />
+      {usuarioLogado
+        ? <p>{t('auth.saudacao', { nome: usuarioLogado.nome })}</p>
+        : <EntrarComGoogle aoAutenticar={loginComGoogle} />}
+      <FormularioProduto aoCriar={aoCriarProduto} token={token} />
       <ul>
         {produtos.map(p => <ItemProduto key={p.id} produto={p} />)}
       </ul>

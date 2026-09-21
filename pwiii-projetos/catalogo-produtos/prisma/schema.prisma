@@ -33,10 +33,11 @@ model Categoria {
 }
 
 model Usuario {
-  id        Int    @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   nome      String
-  email     String @unique
-  senhaHash String
+  email     String  @unique
+  senhaHash String?
+  googleId  String? @unique
 
   @@map("usuarios")
 }

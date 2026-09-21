@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { registrar, login } from '../controllers/authController.js'
+import { registrar, login, loginGoogle } from '../controllers/authController.js'
 
 const router = Router()
 
@@ -35,5 +35,20 @@ router.post('/auth/registrar', registrar)
  *         description: Muitas tentativas
  */
 router.post('/auth/login', limiterLogin, login)
+
+/**
+ * @openapi
+ * /auth/google:
+ *   post:
+ *     summary: Autentica um usuário via ID token do Google Identity Services e retorna um JWT
+ *     responses:
+ *       200:
+ *         description: Login bem-sucedido
+ *       401:
+ *         description: Token do Google inválido
+ *       429:
+ *         description: Muitas tentativas
+ */
+router.post('/auth/google', limiterLogin, loginGoogle)
 
 export default router

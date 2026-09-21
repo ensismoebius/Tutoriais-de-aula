@@ -22,8 +22,9 @@ Convenção de nomes: tudo que é criado neste tutorial (funções, variáveis, 
 - [9. Internacionalização (i18n)](#9-internacionalização-i18n)
 - [10. Segurança avançada em APIs (CORS, Rate Limiting)](#10-segurança-avançada-em-apis-cors-rate-limiting)
 - [11. Websockets / aplicações em tempo real](#11-websockets--aplicações-em-tempo-real)
-- [12. Projeto Final — Início](#12-projeto-final--início)
-- [13. Projeto Final — Apresentações](#13-projeto-final--apresentações)
+- [12. Autenticação com Google (OAuth 2.0 / Sign-In)](#12-autenticação-com-google-oauth-20--sign-in)
+- [13. Projeto Final — Início](#13-projeto-final--início)
+- [14. Projeto Final — Apresentações](#14-projeto-final--apresentações)
 - [Projeto completo — todos os arquivos juntos](#projeto-completo--todos-os-arquivos-juntos)
 
 Cada tópico é um tutorial *build-along*: execute cada passo no seu computador e confira o resultado antes de prosseguir. Cada seção termina com um **✅ Checkpoint** — pare e confirme que o resultado bate antes de continuar.
@@ -1943,11 +1944,316 @@ O cleanup do `useEffect` (`parar-observar` + `socket.off`) evita vazamento de li
 1. Por que emitir só para a sala `produto:${id}` é melhor que fazer `io.emit(...)` para todos os conectados?
 2. O que o `return () => {...}` dentro do `useEffect` evita, e o que aconteceria sem ele se o usuário navegasse entre várias páginas de produto rapidamente?
 
-## 12. Projeto Final — Início
+## 12. Autenticação com Google (OAuth 2.0 / Sign-In)
+
+**Objetivo:** adicionar "Entrar com Google" como alternativa ao registro/login por senha do Tópico 5, emitindo o mesmo tipo de JWT já usado no resto da API — sem qualquer mudança no middleware `autenticar`.
+
+**Pré-requisitos:** API `catalogo-produtos` e frontend `catalogo-frontend` com a autenticação JWT do Tópico 5 funcionando.
+
+**✅ Checkpoint:** `POST /auth/login` com email e senha ainda retorna um token.
+
+**Passo 1 — entenda o que muda (e o que não muda) em relação ao JWT do Tópico 5.** "Entrar com Google" é uma implementação de **OAuth 2.0** combinado com **OpenID Connect (OIDC)** — um padrão aberto para um usuário provar sua identidade a uma aplicação através de um terceiro em quem ambos confiam, sem essa aplicação nunca ver a senha da conta Google. OAuth 2.0 sozinho resolve autorização (“deixe este app postar no meu Twitter em meu nome”); OIDC constrói identidade em cima dele (“prove para este app quem eu sou”), que é o que um botão de login precisa. A boa notícia é que boa parte disso já é familiar: quando o usuário termina de se autenticar com o Google, o que a sua aplicação recebe é um **ID token** — e um ID token é, literalmente, um JWT, com a mesma estrutura de três partes (`header.payload.assinatura`) explicada no Tópico 5. A diferença é só quem assinou: em vez do seu `JWT_SECRET`, a assinatura foi feita com a chave privada do próprio Google. E é exatamente essa diferença que muda como a verificação funciona — verificar o *seu* JWT (Tópico 5) é local: `jwt.verify` recalcula a assinatura usando o mesmo segredo que você já tem em mãos. Verificar um ID token do Google não pode ser local, porque você não tem a chave privada do Google — o backend precisa buscar as chaves **públicas** do Google (que giram periodicamente) pela rede para conferir a assinatura. É por isso que, adiante, a chamada que valida um ID token do Google sempre depende de acesso real à internet, mesmo só para *rejeitar* um token inválido.
+
+Uma segunda diferença importa para a implementação: este fluxo (conhecido como *ID token* ou *Sign-In*) não usa nenhum *client secret* — só um **Client ID**, que nem é secreto, e serve apenas para o backend conferir que o token foi emitido para a *sua* aplicação e não para outra. Isso é mais simples que o fluxo completo de "authorization code" do OAuth 2.0 (usado quando um app quer pedir permissão para acessar a agenda ou o Drive do usuário, por exemplo), que aí sim usa um client secret e uma troca de código por token no backend. Um botão "Entrar com Google" comum não precisa de nada disso — só precisa confirmar identidade.
+
+**✅ Checkpoint:** você consegue explicar, em uma frase, por que verificar um ID token do Google exige acesso à rede, enquanto verificar o JWT do Tópico 5 não exige.
+
+**Passo 2 — crie um Client ID no Google Cloud.** Isso acontece fora do código, num projeto gratuito do Google Cloud:
+
+1. Acesse [console.cloud.google.com](https://console.cloud.google.com) e crie (ou selecione) um projeto.
+2. No menu, vá em **APIs e Serviços → Credenciais**.
+3. Clique em **Criar Credenciais → ID do cliente OAuth**.
+4. Em "Tipo de aplicativo", escolha **Aplicativo da Web**.
+5. Em **Origens JavaScript autorizadas**, adicione `http://localhost:5173` — é a origem onde o Vite serve o frontend ao longo deste tutorial.
+6. Salve. O Google gera um Client ID no formato `algum-numero.apps.googleusercontent.com`.
+
+Esse Client ID **não é secreto** — ele vai parar no código do frontend, público, sem problema nenhum, porque a única coisa que ele faz é dizer ao Google "essa autenticação é para esta aplicação". Guarde-o, ele entra em dois `.env` diferentes nos próximos passos.
+
+**✅ Checkpoint:** você tem um Client ID copiado, terminando em `.apps.googleusercontent.com`.
+
+**Passo 3 — no backend, instale `google-auth-library` e configure o Client ID.** Essa é a biblioteca oficial do Google para Node.js — ela sabe buscar as chaves públicas do Google e verificar a assinatura de um ID token.
+
+```bash
+npm install google-auth-library
+```
+
+Adicione o Client ID ao `.env`:
+
+```
+GOOGLE_CLIENT_ID=algum-numero.apps.googleusercontent.com
+```
+
+E o placeholder correspondente ao `.env.example`, para quem clonar o projeto saber que essa variável existe sem expor o valor real.
+
+**✅ Checkpoint:** `google-auth-library` aparece em `package.json`.
+
+**Passo 4 — atualize o schema: agora um usuário pode existir sem senha.** Até aqui, todo `Usuario` tinha obrigatoriamente um `senhaHash`. A partir de agora isso deixa de ser verdade: alguém pode se cadastrar só pelo Google, sem nunca definir uma senha. O campo `senhaHash` precisa virar opcional, e um novo campo `googleId` guarda o identificador estável que o Google atribui à conta (o campo `sub` do payload, que você vai ver no próximo passo):
+
+```prisma
+model Usuario {
+  id        Int     @id @default(autoincrement())
+  nome      String
+  email     String  @unique
+  senhaHash String?
+  googleId  String? @unique
+
+  @@map("usuarios")
+}
+```
+
+Rode a migration e gere o client de novo, do mesmo jeito que no Tópico 5:
+
+```bash
+npx prisma migrate dev --name add_google_auth
+npx prisma generate
+```
+
+⚠️ Tornar `senhaHash` opcional tem um efeito colateral no `login` que você já escreveu no Tópico 5: se alguém tentar logar por senha numa conta criada só pelo Google (`senhaHash` nulo), `bcrypt.compare(senha, usuario.senhaHash)` recebe `null` no lugar de uma string — e isso não devolve "senha errada", **lança uma exceção** (`Illegal arguments: string, object`), derrubando a rota com um 500 em vez de responder com a mesma mensagem genérica de sempre. A correção é uma linha só, reaproveitando a checagem que já existe:
+
+```javascript
+const usuario = await prisma.usuario.findUnique({ where: { email } })
+if (!usuario || !usuario.senhaHash) {
+  return res.status(401).json({ erro: 'Credenciais inválidas' })
+}
+```
+
+**✅ Checkpoint:** a tabela `usuarios` tem as colunas `senhaHash` (agora aceitando `NULL`) e `googleId`; registrar e logar por senha continuam funcionando exatamente como no Tópico 5.
+
+**Passo 5 — crie `loginGoogle` no controller.** O fluxo tem duas partes: primeiro confirmar que o `credential` recebido do frontend é um ID token genuíno do Google (e não algo forjado por qualquer pessoa que descubra a URL da rota); depois, com a identidade confirmada, criar o usuário na primeira vez ou só localizá-lo nas vezes seguintes. A verificação fica isolada na própria função, para deixar claro que é ali que a assinatura é conferida:
+
+```javascript
+import { OAuth2Client } from 'google-auth-library'
+
+const clienteGoogle = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
+
+export async function verificarIdTokenGoogle(credential) {
+  const ticket = await clienteGoogle.verifyIdToken({
+    idToken: credential,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  })
+  return ticket.getPayload()
+}
+```
+
+`verifyIdToken` faz, de fato, o que o Passo 1 descreveu: busca as chaves públicas do Google pela rede, confere a assinatura do token contra elas, e ainda valida se o campo `audience` bate com o seu Client ID (garantindo que o token foi emitido para a *sua* aplicação) e se o token não expirou. Se qualquer uma dessas checagens falhar, a *promise* rejeita. `ticket.getPayload()` devolve o conteúdo já validado: `sub` (o id estável e único da conta Google), `email`, `name`, entre outros campos.
+
+Agora o controller que usa essa verificação:
+
+```javascript
+export async function loginGoogle(req, res) {
+  const { credential } = req.body
+
+  let payload
+  try {
+    payload = await verificarIdTokenGoogle(credential)
+  } catch (err) {
+    return res.status(401).json({ erro: 'Token do Google inválido' })
+  }
+
+  const { sub: googleId, email, name: nome } = payload
+
+  const usuario = await prisma.usuario.upsert({
+    where: { googleId },
+    update: {},
+    create: { nome, email, googleId },
+  })
+
+  const token = jwt.sign(
+    { id: usuario.id, email: usuario.email },
+    SEGREDO,
+    { expiresIn: '2h' }
+  )
+
+  res.json({ token })
+}
+```
+
+Dois pontos merecem atenção. Primeiro, o `try/catch` em volta de `verificarIdTokenGoogle` não é opcional: sem ele, um token inválido derrubaria a rota com um 500 em vez de responder com um 401 arrumadinho — o mesmo tipo de cuidado que o Tópico 5 já teve com `jwt.verify` no middleware `autenticar`. Segundo, `prisma.usuario.upsert` usando `googleId` como chave resolve, numa linha, tanto "primeira vez que esse usuário aparece" (cria) quanto "usuário já existia" (só localiza) — e o token emitido no final é gerado pelo **mesmo** `jwt.sign`, com o **mesmo** formato `{ id, email }`, do login por senha. É isso que garante que o middleware `autenticar` nem precisa saber que esse token veio do Google: para ele, é só mais um JWT válido assinado com `JWT_SECRET`.
+
+Esse `upsert` simples deixa um caso de fora, de propósito: alguém que já tem conta por senha e tenta entrar pelo Google usando o mesmo email cai num conflito, porque o `email` também é `@unique` e o `create` tentaria inserir uma linha nova com um email que já existe. Um sistema real trataria isso vinculando as duas contas — fica como exercício mais adiante.
+
+**✅ Checkpoint:** o arquivo `authController.js` importa `OAuth2Client` e exporta `loginGoogle`, sem erros de sintaxe.
+
+**Passo 6 — registre a rota.** Reaproveite o `limiterLogin` que o Tópico 10 já criou para `/auth/login` — não faz sentido um limitador diferente para outra forma de login:
+
+```javascript
+router.post('/auth/google', limiterLogin, loginGoogle)
+```
+
+Com o servidor rodando, teste a rejeição de um token inválido — isso não depende de credenciais do Google nenhuma, porque a própria tentativa de verificar a assinatura já basta para rejeitar:
+
+```bash
+curl -X POST http://localhost:3000/auth/google \
+  -H "Content-Type: application/json" \
+  -d '{"credential":"isto-nao-eh-um-jwt-valido"}'
+```
+
+```json
+{"erro":"Token do Google inválido"}
+```
+
+Isso responde com status 401. Repare que essa chamada realmente saiu pela rede até o Google para buscar as chaves públicas antes de decidir que o token nem tinha o formato certo — ou seja, mesmo o caminho de erro passou por infraestrutura real do Google, não foi um atalho local.
+
+**✅ Checkpoint:** `POST /auth/google` com um `credential` inválido responde 401 com `{"erro":"Token do Google inválido"}`.
+
+**Passo 7 — no frontend, carregue o script do Google Identity Services.** Diferente das bibliotecas que você instalou via `npm` até aqui, o Google recomenda carregar essa peça direto como um `<script>` no HTML — ela não é feita para rodar em Node.js, só no navegador, e se anuncia como `window.google` assim que termina de baixar. Adicione em `index.html`, dentro de `<head>`:
+
+```html
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+```
+
+E adicione o Client ID do Passo 2 ao `.env` do frontend (com o prefixo `VITE_`, que o Vite exige para expor uma variável de ambiente ao código do navegador):
+
+```
+VITE_GOOGLE_CLIENT_ID=algum-numero.apps.googleusercontent.com
+```
+
+Sem esquecer o placeholder correspondente em `.env.example`.
+
+**✅ Checkpoint:** abrindo o DevTools do navegador na página do frontend, `window.google` existe depois que a página termina de carregar.
+
+**Passo 8 — crie o componente do botão.** A API do Google Identity Services não é um componente React pronto — ela expõe funções globais (`window.google.accounts.id.initialize` e `.renderButton`) que desenham o botão dentro de um elemento do DOM que você indicar. `useRef` dá exatamente essa referência a um elemento real, e `useEffect` garante que a inicialização só rode depois que o React já colocou esse elemento na tela. Crie `src/components/EntrarComGoogle.jsx`:
+
+```jsx
+import { useEffect, useRef } from 'react'
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+
+function EntrarComGoogle({ aoAutenticar }) {
+  const botaoRef = useRef(null)
+
+  useEffect(() => {
+    if (!window.google || !botaoRef.current) return
+
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (resposta) => aoAutenticar(resposta.credential),
+    })
+
+    window.google.accounts.id.renderButton(botaoRef.current, {
+      theme: 'outline',
+      size: 'large',
+    })
+  }, [aoAutenticar])
+
+  return <div ref={botaoRef} />
+}
+
+export default EntrarComGoogle
+```
+
+`initialize` recebe o `client_id` (o mesmo do Passo 2) e um `callback`, chamado pelo Google assim que o usuário termina o login na janela que o próprio Google abre. O objeto que esse `callback` recebe tem um campo `.credential` — é exatamente o ID token descrito no Passo 1, como uma string. `renderButton` desenha o botão oficial do Google (com o visual e o texto no idioma do navegador do usuário) dentro do `<div>` referenciado por `botaoRef`. Este componente não decide o que fazer com o `credential` — ele só entrega essa string para quem o usa, via `aoAutenticar`, mantendo a responsabilidade de falar com o backend em `App.jsx`.
+
+**✅ Checkpoint:** o componente compila sem erros e, com um Client ID válido configurado, desenha um botão "Sign in with Google" na tela.
+
+⚠️ Um Client ID inválido ou ainda de placeholder (como o que fica em `.env.example`) **não produz nenhum erro visível**. `window.google` continua existindo normalmente, `initialize`/`renderButton` rodam sem lançar exceção, o console do navegador fica limpo — e o `<div ref={botaoRef} />` simplesmente permanece vazio, sem nenhum botão desenhado dentro dele. O Google Identity Services falha desse jeito de propósito: como o Client ID nem é secreto, ele não pode dar pistas específicas sobre *por que* uma origem não está autorizada, então prefere não desenhar nada a desenhar um botão quebrado. Na prática, isso significa que "a tela não mostra nenhum botão" quase sempre aponta para um Client ID real ausente ou mal configurado (verifique se `VITE_GOOGLE_CLIENT_ID` está preenchido com o valor do Passo 2, e não com o placeholder) — não para um bug no componente em si.
+
+**Passo 9 — conecte o botão em `App.jsx`.** Faltam duas peças: guardar o token depois do login, e usar esse token nas requisições que o Tópico 5 já protege. Comece importando o componente e adicionando dois estados novos:
+
+```javascript
+import EntrarComGoogle from './components/EntrarComGoogle.jsx'
+
+const [usuarioLogado, setUsuarioLogado] = useState(null)
+const [token, setToken] = useState(null)
+```
+
+A função que o botão chama recebe o `credential`, decodifica o payload só para exibir o nome na hora (decodificar um JWT no navegador não verifica nada — é apenas ler Base64URL, o mesmo tipo de leitura que o Tópico 5 descreveu como "qualquer um pode fazer"), e manda o `credential` de verdade para o backend, que é quem faz a verificação que importa:
+
+```javascript
+async function loginComGoogle(credential) {
+  const payloadGoogle = JSON.parse(atob(credential.split('.')[1]))
+
+  const resposta = await fetch(`${API_URL}/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  })
+  if (!resposta.ok) return
+
+  const dados = await resposta.json()
+  setUsuarioLogado({ nome: payloadGoogle.name, email: payloadGoogle.email })
+  setToken(dados.token)
+}
+```
+
+Agora o `criarProduto` (que, até este tópico, nunca enviava nenhum cabeçalho de autenticação — apesar de `POST /produtos` já estar protegido desde o Tópico 5) passa a aceitar o token e incluí-lo como `Authorization: Bearer <token>` quando ele existir:
+
+```javascript
+async function criarProduto(dados, token) {
+  const resposta = await fetch(`${API_URL}/produtos`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify(dados),
+  })
+
+  if (!resposta.ok) throw new Error('Falha ao criar produto')
+  return resposta.json()
+}
+```
+
+`FormularioProduto` passa a receber esse `token` como prop e a tratar a falha com uma mensagem de erro local, em vez de deixar a exceção estourar sem tratamento:
+
+```javascript
+function FormularioProduto({ aoCriar, token }) {
+  const [erroCriacao, setErroCriacao] = useState(null)
+  // ...
+  async function enviar(e) {
+    e.preventDefault()
+    if (!nome || !preco) return
+    setErroCriacao(null)
+    try {
+      const novoProduto = await criarProduto({ /* ... */ }, token)
+      aoCriar(novoProduto)
+    } catch {
+      setErroCriacao(t('auth.loginNecessario'))
+    }
+  }
+  // ...
+}
+```
+
+E, por fim, `App` decide o que mostrar: o botão do Google enquanto ninguém logou, ou uma saudação depois — passando o `token` adiante para o formulário:
+
+```javascript
+{usuarioLogado
+  ? <p>{t('auth.saudacao', { nome: usuarioLogado.nome })}</p>
+  : <EntrarComGoogle aoAutenticar={loginComGoogle} />}
+<FormularioProduto aoCriar={aoCriarProduto} token={token} />
+```
+
+**✅ Checkpoint (honesto sobre o que dá para testar sem uma conta Google real):** o formulário de criar produto, sem estar logado, ainda aparece normalmente na tela e falha de forma limpa (mostrando a mensagem de `auth.loginNecessario`) em vez de travar — isso já dá para conferir sem nenhum Client ID real, apenas rodando `npm run dev` no frontend com a API no ar. O botão do Google em si, e o fluxo completo de login pelo navegador, só existem de verdade com um Client ID real, criado no Passo 2 a partir da sua própria conta Google — sem isso, `window.google` carrega, mas `initialize`/`renderButton` não têm com quem autenticar. Configure seu próprio Client ID e teste o botão fim a fim antes de considerar este tópico concluído: clique em "Sign in with Google", escolha sua conta, e confirme que a saudação com seu nome aparece e que criar um produto depois disso funciona.
+
+### Resumo do que você construiu
+
+```
+✅ Diferença conceitual entre OAuth 2.0/OIDC e o JWT do Tópico 5 — mesmo formato, chave de assinatura diferente
+✅ Client ID criado no Google Cloud (sem client secret, sem escopo de API)
+✅ Schema com senhaHash opcional e googleId único, migration aplicada
+✅ Guarda contra bcrypt.compare recebendo um senhaHash nulo
+✅ verificarIdTokenGoogle validando a assinatura contra as chaves públicas do Google
+✅ loginGoogle emitindo o mesmo formato de JWT do login por senha, via upsert por googleId
+✅ Rota /auth/google reaproveitando o limiterLogin existente
+✅ Botão "Entrar com Google" desenhado via Google Identity Services
+✅ criarProduto enviando Authorization: Bearer quando há um token, com erro tratado quando não há
+```
+
+**Exercícios:**
+- *Fácil:* exiba o avatar do usuário logado usando o campo `picture` do payload do Google (já disponível no `credential` decodificado em `loginComGoogle`).
+- *Médio:* trate o caso de um email já cadastrado por senha tentando logar via Google — em vez de deixar o `upsert` falhar por conflito de `email`, localize o usuário existente pelo email e vincule o `googleId` a ele.
+- *Difícil:* pesquise e implemente um logout real no frontend (removendo o token do estado e chamando `google.accounts.id.disableAutoSelect()`), e explique por que isso não invalida o token no backend — o que seria necessário (uma *blocklist* de tokens revogados, por exemplo) para um logout que realmente impeça o uso do token antigo antes de ele expirar.
+
+**Perguntas para fixação:**
+1. Por que o backend não precisa de um *client secret* para verificar o ID token do Google, ao contrário do fluxo de *authorization code* do OAuth 2.0?
+2. Por que reaproveitar o mesmo `jwt.sign` do login por senha evita ter que duplicar o middleware `autenticar` para aceitar logins vindos do Google?
+
+## 13. Projeto Final — Início
 
 Aula de início de projeto: hoje você define escopo, não escreve muito código ainda. Ao final, você deve sair com um documento de escopo aprovado e o projeto (backend + frontend) criado.
 
-Todo o conteúdo do semestre (ORM/Prisma, REST, JWT, testes, Swagger, i18n, CORS/rate limiting, WebSockets) converge agora num projeto final individual ou em dupla.
+Todo o conteúdo do semestre (ORM/Prisma, REST, JWT, testes, Swagger, i18n, CORS/rate limiting, WebSockets, login com Google) converge agora num projeto final individual ou em dupla.
 
 **Passo 1 — escolha o tema da aplicação full-stack.** Requisitos mínimos (podendo reaproveitar o que foi construído no `catalogo-produtos` ao longo do semestre, ou propor um domínio novo):
 
@@ -2030,7 +2336,7 @@ prisma/
 
 Nas semanas seguintes, use o conteúdo já visto no semestre para implementar o projeto de forma incremental, marco a marco.
 
-## 13. Projeto Final — Apresentações
+## 14. Projeto Final — Apresentações
 
 Checklist para a apresentação:
 - Demonstração ao vivo do CRUD via Postman, incluindo o login JWT e a criação/exclusão de um registro autenticado.
@@ -2068,16 +2374,19 @@ catalogo-produtos/                      ← backend (Express + Prisma + MySQL)
 
 catalogo-frontend/                      ← frontend (React + Vite)
 ├── package.json
+├── index.html
 ├── locales/
 │   ├── pt.json
 │   └── en.json
 └── src/
     ├── main.jsx
     ├── App.jsx
-    └── i18n.js
+    ├── i18n.js
+    └── components/
+        └── EntrarComGoogle.jsx
 ```
 
-**`src/server.js`** — o ponto de entrada da API, reunindo as rotas de todos os tópicos. Vem do Tópico 1 (Express básico), com CORS do Tópico 3, autenticação do Tópico 5, Swagger do Tópico 7, rate limiting do Tópico 10 e Socket.IO do Tópico 11.
+**`src/server.js`** — o ponto de entrada da API, reunindo as rotas de todos os tópicos. Vem do Tópico 1 (Express básico), com CORS do Tópico 3, autenticação do Tópico 5, Swagger do Tópico 7, rate limiting do Tópico 10, Socket.IO do Tópico 11 e login com Google do Tópico 12.
 
 ```javascript
 import express from 'express'
@@ -2088,7 +2397,7 @@ import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpec } from './swagger.js'
 import { listar, criar, buscarPorId, deletar, listarCategorias } from './controllers/produtoController.js'
-import { registrar, login } from './controllers/authController.js'
+import { registrar, login, loginGoogle } from './controllers/authController.js'
 import { autenticar } from './middlewares/autenticar.js'
 
 const app = express()
@@ -2106,6 +2415,7 @@ app.delete('/produtos/:id', autenticar, deletar)
 app.get('/categorias', listarCategorias)
 app.post('/auth/registrar', registrar)
 app.post('/auth/login', limiterLogin, login)
+app.post('/auth/google', limiterLogin, loginGoogle)
 
 const httpServer = createServer(app)
 const io = new Server(httpServer, { cors: { origin: '*' } })
@@ -2117,7 +2427,7 @@ io.on('connection', (socket) => {
 httpServer.listen(3000, () => console.log('Servidor rodando em http://localhost:3000'))
 ```
 
-**`prisma/schema.prisma`** — Tópicos 1, 2 e 5, reunindo os três modelos finais e mostrando de relance a relação model↔tabela discutida no Tópico 1: cada `model` abaixo é uma tabela, cada campo é uma coluna, e os relacionamentos entre `Produto` e `Categoria` viraram a chave estrangeira `categoriaId`.
+**`prisma/schema.prisma`** — Tópicos 1, 2, 5 e 12, reunindo os três modelos finais e mostrando de relance a relação model↔tabela discutida no Tópico 1: cada `model` abaixo é uma tabela, cada campo é uma coluna, e os relacionamentos entre `Produto` e `Categoria` viraram a chave estrangeira `categoriaId`. Em `Usuario`, `senhaHash` opcional e `googleId` são a marca do Tópico 12: uma conta pode existir só por senha, só pelo Google, ou (tratando o exercício correspondente) pelas duas formas.
 
 ```prisma
 generator client {
@@ -2152,15 +2462,16 @@ model Categoria {
 }
 
 model Usuario {
-  id        Int    @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   nome      String
-  email     String @unique
-  senhaHash String
+  email     String  @unique
+  senhaHash String?
+  googleId  String? @unique
 
   @@map("usuarios")
 }
 ```
 
-Os demais arquivos (`database.js`, `swagger.js`, cada controller, o middleware de autenticação, o serviço de cotação, e todo o frontend React com i18n e o hook de WebSocket) estão exatamente como apresentados em cada tópico correspondente — reveja o tópico indicado para o contexto completo de cada um.
+Os demais arquivos (`database.js`, `swagger.js`, cada controller, o middleware de autenticação, o serviço de cotação, e todo o frontend React com i18n, o hook de WebSocket e o componente `EntrarComGoogle.jsx`) estão exatamente como apresentados em cada tópico correspondente — reveja o tópico indicado para o contexto completo de cada um.
 
 Um usuário navegando pelo catálogo completo, e onde cada peça do MVC entra em ação: abre o frontend React (a **View**), que faz `fetch` na API e recebe do **Controller** a lista de produtos, já lida do **Model** (Prisma); vê preços no idioma/moeda ativos (i18n e consumo de API externa); faz login (JWT armazenado no cliente); com o token em mãos, cria ou edita produtos, com a UI atualizando instantaneamente; abrindo a mesma página de produto em duas abas, uma mudança de estoque em uma reflete em tempo real na outra via WebSocket — tudo isso rodando sobre uma API validada, documentada em Swagger, testável por uma coleção Postman, e protegida por CORS, rate limiting e autenticação JWT.

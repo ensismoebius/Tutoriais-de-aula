@@ -1,0 +1,5 @@
+- Laravel controllers:
+	- resource
+	- Singleton
+	- API
+	- Invokable
