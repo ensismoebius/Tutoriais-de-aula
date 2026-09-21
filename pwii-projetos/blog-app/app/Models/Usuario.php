@@ -9,7 +9,7 @@ class Usuario extends Authenticatable
 {
     protected $table = 'usuarios';
 
-    protected $fillable = ['nome', 'email', 'password'];
+    protected $fillable = ['nome', 'email', 'password', 'google_id'];
 
     protected $hidden = ['password', 'remember_token'];
 

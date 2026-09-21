@@ -23,6 +23,7 @@ Route::post('/comentarios', [ComentarioController::class, 'criar']);
 // Tópico 2 — Sessões / login
 Route::get('/login', [SessaoController::class, 'mostrarLogin'])->name('login');
 Route::post('/login', [SessaoController::class, 'entrar']);
+Route::post('/login/google', [SessaoController::class, 'entrarComGoogle']);
 Route::post('/logout', [SessaoController::class, 'sair'])->middleware('auth');
 
 // Tópicos 4 e 5 — Padrão DAO / Projeto Integrador

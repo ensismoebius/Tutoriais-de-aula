@@ -22,6 +22,8 @@ php artisan migrate
 php artisan serve
 ```
 
+O login com Google (Tópico 2, Passo 7) só funciona de ponta a ponta com um `GOOGLE_CLIENT_ID` real, criado no [Google Cloud Console](https://console.cloud.google.com) com `http://localhost:8000` como origem JavaScript autorizada — sem ele, a página de login carrega normalmente, mas nenhum botão do Google aparece.
+
 Sobe em `http://localhost:8000`. Crie usuários de teste pelo tinker:
 
 ```bash
@@ -37,6 +39,7 @@ Todo item abaixo foi confirmado rodando o servidor de verdade (`php artisan serv
 
 - **Formulário de newsletter e busca por querystring** (`GET/POST /newsletter`, `GET /artigos?tag=...`), com inspeção completa da requisição em `POST /api/inspecionar` — Tópico 1.
 - **Login/logout com sessão** (`GET/POST /login`, `POST /logout`), incluindo checkbox de lembrar-me e rota protegida por `middleware('auth')` — Tópico 2.
+- **Login com Google** (`POST /login/google`): `google/apiclient` 2.x verificando o ID token via `Google\Client::verifyIdToken()`, usuário Google-only criado com `password` nulo, sessão iniciada com o mesmo `Auth::login()` + `session()->regenerate()` do login por senha. A rejeição de um `credential` inválido foi testada de verdade contra a rede do Google (`curl` com o servidor no ar); o caminho de sucesso (criação do usuário + `Auth::check()`) tem cobertura automatizada em `tests/Feature/LoginGoogleTest.php`, com `GoogleIdTokenVerifier` trocado por um fake — não existe, neste ambiente, uma forma de simular o clique real no botão "Sign in with Google" num navegador, isso exige um Client ID real e uma conta Google real — Tópico 2.
 - **Resistência a SQL Injection via Eloquent**: busca com o payload `' OR '1'='1` testada de verdade contra `/usuarios/busca` devolveu 0 resultados (não a tabela inteira), e o log de queries do tinker confirmou a query parametrizada (`... like ?`, payload no array de bindings) — Tópico 3.
 - **XSS neutralizado por escape na saída**: um comentário com `<script>alert('XSS!')</script>` foi de fato gravado cru no banco (confirmado via `SELECT` direto) e veio escapado (`&lt;script&gt;...`) na página `/comentarios` — Tópico 3. A rota de demonstração insegura (`/comentarios-inseguro`) descrita no tutorial **não está incluída aqui** — ela existe só para fins didáticos de comparação lado a lado; mantê-la num projeto de referência reintroduziria a vulnerabilidade de propósito, o que não serve ao objetivo deste diretório.
 - **Mass assignment bloqueado**: `Comentario::create(['texto' => ..., 'aprovado' => true])` com `aprovado` fora do `$fillable` grava `aprovado` como `null`, nunca `true` — confirmado no tinker.
@@ -58,6 +61,7 @@ Veja a seção "Projeto completo" em `Tutorial_PWII.md` para a árvore de arquiv
 | Controller | `BuscaController`, `ComentarioController` | 3 |
 | Controller | `SessaoController` | 2 |
 | Controller | `PostController` | 4/5 |
+| Service | `app/Services/GoogleIdTokenVerifier.php`, `GoogleClientIdTokenVerifier.php` | 2 |
 
 ## Banco de dados usado nas lições
 

@@ -250,7 +250,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
     })->create();
 ```
@@ -506,11 +506,11 @@ Em `routes/web.php`:
 use App\Http\Controllers\SessaoController;
 
 Route::get('/login', [SessaoController::class, 'mostrarLogin'])->name('login');
-Route::post('/login', [SessaoController::class, 'login']);
-Route::post('/logout', [SessaoController::class, 'logout']);
+Route::post('/login', [SessaoController::class, 'entrar']);
+Route::post('/logout', [SessaoController::class, 'sair'])->middleware('auth');
 ```
 
-`/login` aparece duas vezes, com verbos diferentes — o `GET` **exibe** o formulário; o `POST` **processa** o envio. Essa separação segue a semântica do HTTP: GET lê, POST altera estado. O logout é POST pelo mesmo motivo — um GET de logout poderia ser disparado por qualquer link em outro site, deslogando o usuário sem que ele quisesse.
+`/login` aparece duas vezes, com verbos diferentes — o `GET` **exibe** o formulário; o `POST` **processa** o envio. Essa separação segue a semântica do HTTP: GET lê, POST altera estado. O logout é POST pelo mesmo motivo — um GET de logout poderia ser disparado por qualquer link em outro site, deslogando o usuário sem que ele quisesse. E leva `middleware('auth')`: só faz sentido derrubar uma sessão que já existe, então a mesma proteção que o Passo 6 aplica a rotas autenticadas já se aplica aqui.
 
 **Guarde o `->name('login')`** — ele volta a importar no Passo 6. Quando o middleware de autenticação barra um visitante, ele redireciona procurando uma rota **chamada** `login`. Sem esse nome, o Laravel não redireciona: lança um erro 500 com "Route [login] not defined".
 
@@ -518,14 +518,14 @@ Route::post('/logout', [SessaoController::class, 'logout']);
 php artisan make:controller SessaoController
 ```
 
-`resources/views/login.blade.php`:
+Crie também a subpasta `resources/views/sessao/` — agrupar as views de login (e as que vierem depois, ligadas à sessão) numa pasta própria evita que `resources/views/` vire uma lista plana conforme o projeto cresce. `resources/views/sessao/login.blade.php`:
 
 ```blade
 <!DOCTYPE html>
 <html>
 <body>
-    @if(session('erro'))
-        <p style="color:red">{{ session('erro') }}</p>
+    @if ($errors->any())
+        <p style="color:red">{{ $errors->first() }}</p>
     @endif
     <form method="POST" action="/login">
         @csrf
@@ -538,7 +538,7 @@ php artisan make:controller SessaoController
 </html>
 ```
 
-Quatro pontos importantes: `@if(session('erro'))` lê uma mensagem gravada na sessão pelo controller — a chave tem que ser **exatamente a mesma** nos dois lados, senão nada aparece na tela e nenhum erro é lançado (falha silenciosa clássica). `@csrf` é obrigatório — sem ele, 419. Os atributos `name` (não os `id`) viram as chaves recebidas no servidor. O checkbox `lembrar`, quando desmarcado, **não é enviado** — a chave simplesmente não existe na requisição, o que exige tratamento especial no Passo 5.
+Três pontos importantes: `$errors` é uma variável que o Laravel injeta **automaticamente** em toda view — mesmo quando nada deu errado, ela existe, só que vazia — desde que o controller devolva os erros com `withErrors()` (Passo 5), nunca `session('erro')` manual; é esse mecanismo padrão, e não uma chave inventada, que faz a mensagem aparecer sem risco de as duas pontas divergirem em silêncio. `@csrf` é obrigatório — sem ele, 419. Os atributos `name` (não os `id`) viram as chaves recebidas no servidor. O checkbox `lembrar`, quando desmarcado, **não é enviado** — a chave simplesmente não existe na requisição, o que exige tratamento especial no Passo 5.
 
 **✅ Checkpoint:** a rota de login mostra o formulário com o checkbox.
 
@@ -565,19 +565,15 @@ class SessaoController extends Controller
 `Auth` é a fachada que dá acesso ao sistema de autenticação. A validação dos dados recebidos:
 
 ```php
-    public function login(Request $request)
+    public function entrar(Request $request)
     {
-        try {
-            $credenciais = $request->validate([
-                'email' => 'required|email',
-                'password' => 'required',
-            ]);
-        } catch (\Exception $e) {
-            return redirect()->back()->with('erro', 'Credenciais inválidas.');
-        }
+        $credenciais = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
 ```
 
-A leitura do checkbox:
+Repare que não há `try/catch` ao redor de `validate()`: quando uma regra falha, `validate()` lança `ValidationException`, e o Laravel já intercepta essa exceção sozinho — redireciona de volta com os erros, sem que o controller precise fazer nada especial. Um `try/catch` genérico ali só esconderia esse comportamento padrão sem ganhar nada. A leitura do checkbox:
 
 ```php
         $lembrar = $request->boolean('lembrar');
@@ -586,33 +582,22 @@ A leitura do checkbox:
 `boolean()` resolve os dois casos com segurança: converte "on" em `true` e a ausência da chave em `false`. Ler o campo direto daria `null` e um aviso de índice indefinido. A tentativa de autenticação:
 
 ```php
-        if (Auth::attempt($credenciais, $lembrar)) {
-            $request->session()->regenerate();
-            return redirect('/painel');
+        if (! Auth::attempt($credenciais, $lembrar)) {
+            return back()->withErrors(['email' => 'Credenciais inválidas.']);
         }
 
-        return back()->with('erro', 'Email ou senha inválidos');
+        $request->session()->regenerate();
+
+        return redirect('/posts');
     }
 ```
 
-`Auth::attempt($credenciais, $lembrar)` busca o usuário pelo e-mail, aplica o hash na senha digitada e compara com o banco. Se bater, cria a sessão e devolve `true` — o **segundo argumento** é o lembrar-me: quando verdadeiro, o Laravel gera o token de longa duração e envia o cookie persistente. `$request->session()->regenerate()` gera um **novo ID de sessão**, prevenindo *session fixation*: um atacante que tivesse forçado um ID conhecido antes do login perde o acesso, porque o ID muda no instante da autenticação. **Nunca omita esta linha.** A mensagem de erro genérica ("Email ou senha inválidos") é intencional — não distingue "e-mail não existe" de "senha errada", evitando que alguém descubra quais e-mails estão cadastrados.
+`Auth::attempt($credenciais, $lembrar)` busca o usuário pelo e-mail, aplica o hash na senha digitada e compara com o banco. Se bater, cria a sessão e devolve `true` — o **segundo argumento** é o lembrar-me: quando verdadeiro, o Laravel gera o token de longa duração e envia o cookie persistente. `$request->session()->regenerate()` gera um **novo ID de sessão**, prevenindo *session fixation*: um atacante que tivesse forçado um ID conhecido antes do login perde o acesso, porque o ID muda no instante da autenticação. **Nunca omita esta linha.** A mensagem de erro genérica ("Credenciais inválidas.") é intencional — não distingue "e-mail não existe" de "senha errada", evitando que alguém descubra quais e-mails estão cadastrados. E ela chega à view por `withErrors()`, a mesma variável `$errors` que o Passo 4 já lê — sem inventar uma chave de sessão paralela.
 
-O painel, para onde o login redireciona:
-
-```php
-    public function painel(Request $request)
-    {
-        return [
-            'usuario' => Auth::user()?->nome,
-            'logado_via_lembrar_me' => Auth::viaRemember(),
-        ];
-    }
-```
-
-Retornar um array de um controller faz o Laravel devolver JSON automaticamente. O logout:
+O destino do redirect, depois de logado, é `/posts` — a listagem de posts que o Tópico 4/5 constrói sobre este mesmo projeto; é ali, e não numa rota de "painel" separada, que a sessão autenticada passa a fazer diferença visível (o Passo 6 mostra exatamente o que muda na tela). O logout:
 
 ```php
-    public function logout(Request $request)
+    public function sair(Request $request)
     {
         Auth::logout();
         $request->session()->invalidate();
@@ -632,25 +617,309 @@ Sair exige as três linhas, cada uma desfazendo uma peça diferente:
 
 Omitir a segunda deixaria dados antigos acessíveis na mesma sessão; omitir a terceira faria o próximo login falhar com 419.
 
-**✅ Checkpoint:** com senha errada, a mensagem vermelha aparece na tela; com a senha certa, o navegador é redirecionado para o painel.
+**✅ Checkpoint:** com senha errada, a mensagem vermelha aparece na tela; com a senha certa, o navegador é redirecionado para `/posts`.
 
 ### Passo 6 — proteja rotas e mostre dados da sessão
 
+`/posts` (o destino do redirect do Passo 5) é a listagem de posts que o Tópico 5 constrói neste mesmo `blog-app` — o projeto é cumulativo, e o `routes/web.php` final já tem essas rotas ao lado das de sessão:
+
 ```php
-Route::get('/painel', [SessaoController::class, 'painel'])->middleware('auth');
+Route::get('/posts/novo', [PostController::class, 'mostrarFormulario'])->middleware('auth');
+Route::post('/posts', [PostController::class, 'criar'])->middleware('auth');
+Route::delete('/posts/{id}', [PostController::class, 'excluir'])->middleware('auth');
 ```
 
-`middleware('auth')` é um filtro que roda *antes* da rota: verifica se há usuário autenticado e, se não houver, redireciona para a rota chamada `login` — a rota do painel nem chega a executar. Esse redirecionamento só funciona porque a rota de login tem nome (Passo 4); sem ele, erro 500. `Auth::user()` devolve o model do usuário autenticado, nunca nulo dentro desta rota — o middleware já garantiu isso. `Auth::viaRemember()` informa se a sessão atual foi restaurada a partir do cookie de lembrar-me ou de um login normal — útil para exigir reautenticação em ações sensíveis:
+`middleware('auth')` é um filtro que roda *antes* da rota: verifica se há usuário autenticado e, se não houver, redireciona para a rota chamada `login` — a rota protegida nem chega a executar. Esse redirecionamento só funciona porque a rota de login tem nome (Passo 4); sem ele, erro 500. Você já tem, deste próprio tópico, uma rota protegida de verdade para testar isso sem esperar pelo Tópico 5: `/logout` (Passo 4) também leva `middleware('auth')` — tente `POST /logout` deslogado e confira o redirecionamento para `/login`.
+
+A listagem pública em `/posts` já mostra, hoje, como uma view lê dados da sessão sem exigir login para a página inteira — só o conteúdo muda conforme `Auth::check()`:
+
+```blade
+@auth
+    <p>Logado como {{ auth()->user()->nome }}.
+        <a href="/posts/novo">Novo post</a>
+        <form method="POST" action="/logout" style="display:inline">
+            @csrf
+            <button type="submit">Sair</button>
+        </form>
+    </p>
+@else
+    <p><a href="/login">Entrar</a> para publicar.</p>
+@endauth
+```
+
+`auth()->user()` (a função helper, equivalente a `Auth::user()`) devolve o model do usuário autenticado, ou `null` se ninguém estiver logado — por isso a diretiva `@auth`/`@else` do Blade, e não um `if` cego que quebraria para visitante anônimo. Dentro do bloco `@auth`, o model nunca é nulo.
+
+Uma peça relacionada, que você vai usar de verdade no Tópico 4/5, é `Auth::viaRemember()`: informa se a sessão atual foi restaurada a partir do cookie de lembrar-me ou de um login normal — útil para exigir reautenticação em ações sensíveis, por exemplo:
 
 ```php
 if (Auth::viaRemember()) {
-    return redirect('/confirmar-senha');
+    return redirect('/login')->with('aviso', 'Confirme sua senha para continuar.');
 }
 ```
 
-**Como testar o lembrar-me de verdade:** faça login com o checkbox marcado; no DevTools, aba Application → Cookies, você verá dois cookies: `laravel-session` e um começando com `remember_web_`. Apague **apenas** o cookie de sessão e recarregue o painel — você continua logado, e `viaRemember()` agora responde `true`, provando que a sessão foi reconstruída a partir do cookie persistente.
+Este projeto de referência não chama `viaRemember()` em lugar nenhum ainda — fica como o Exercício 2 desta seção. **Como testar o lembrar-me de verdade, mesmo sem essa checagem:** faça login com o checkbox marcado; no DevTools, aba Application → Cookies, você verá dois cookies: `laravel-session` e um começando com `remember_web_`. Apague **apenas** o cookie de sessão e recarregue `/posts` — você continua logado (o nome continua aparecendo no topo da página), prova de que a sessão foi reconstruída a partir do cookie persistente, mesmo sem nenhum código checando isso explicitamente.
 
-**✅ Checkpoint:** após apagar só o cookie de sessão, o painel continua acessível e indica que o acesso veio do lembrar-me.
+**✅ Checkpoint:** deslogado, `POST /logout` redireciona para `/login` em vez de executar; logado, `/posts` mostra "Logado como <nome>"; depois de apagar só o cookie de sessão (mantendo o de lembrar-me), `/posts` continua mostrando o nome do usuário.
+
+### Passo 7 — Login com Google (Identity Services)
+
+Até aqui, confirmar a identidade de alguém sempre significou a mesma coisa: comparar o hash de uma senha com `Auth::attempt()`. O Google oferece outra forma de fazer essa mesma confirmação, sem o `blog-app` nunca ver uma senha: a pessoa loga direto com a conta Google dela, e o Google devolve um **ID token** — um JWT assinado pelo próprio Google, provando quem ela é. O papel do backend não muda em relação ao que o Passo 5 já faz: ainda é "confirmar identidade, depois `Auth::login()`". Só a **forma de confirmar** muda — em vez de checar um hash, o backend confere a assinatura do Google. O destino, depois de confirmada a identidade, é o mesmo de sempre: uma sessão válida, criada exatamente como o Passo 5 já cria.
+
+**7.1 — crie um Client ID no Google Cloud.** Acesse [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID** → tipo **Web application**. Em **Authorized JavaScript origins**, adicione `http://localhost:8000` — a URL que `php artisan serve` usa neste tutorial (não confunda com a porta `:5173` do Vite; o `blog-app` é renderizado pelo servidor, não empacotado por um bundler). Ao final, o Google mostra um **Client ID**, algo como `123456-abc.apps.googleusercontent.com`. Ele não é secreto — vai parar no HTML da página, visível para qualquer visitante — e este fluxo não usa client secret nenhum.
+
+**7.2 — instale o `google/apiclient`.** É a biblioteca oficial do Google para PHP, equivalente ao `google-auth-library` que um projeto Node usaria:
+
+```bash
+composer require google/apiclient
+```
+
+⚠️ **Esse comando, do jeito que está, instala a versão errada.** O Laravel 13 fixa `guzzlehttp/guzzle` na versão `^8`, e o `google/apiclient` 2.x (a versão atual, com o namespace `Google\Client`) exige Guzzle `~7`. Sem conseguir satisfazer os dois ao mesmo tempo, o Composer não avisa e não falha — ele silenciosamente resolve para a `google/apiclient` **v1.1.9**, lançada em 2020, sem `composer.json` moderno, com a classe legada `Google_Client` (sem namespace, autoload baseado em arquivo). É fácil não perceber, porque o comando roda sem erro nenhum. Force a versão atual e deixe o Composer resolver o conflito de verdade, rebaixando o Guzzle:
+
+```bash
+composer require "google/apiclient:^2.9" -W
+```
+
+A flag `-W` (`--with-all-dependencies`) autoriza o Composer a também ajustar dependências já travadas — neste caso, o Guzzle do projeto inteiro volta de `8.x` para `7.15.x`, a versão mais recente que o `google/apiclient` 2.x aceita. Isso é uma mudança de verdade em todo o projeto, não só nesta feature: qualquer código que já usasse o `Http` facade do Laravel (que roda sobre Guzzle por baixo) continua funcionando — a API pública do Guzzle 7 não muda entre essas versões para o uso que o Laravel faz dela — mas vale rodar a suíte de testes depois, o que a seção de verificação deste passo já cobre.
+
+Acrescente o Client ID do Passo 7.1 ao `.env`:
+
+```
+GOOGLE_CLIENT_ID=123456-abc.apps.googleusercontent.com
+```
+
+E o placeholder correspondente no `.env.example`, nunca o valor real:
+
+```
+GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
+```
+
+Para expor essa variável a partir de um lugar central — em vez de espalhar `env('GOOGLE_CLIENT_ID')` pelo controller e pela view — crie uma entrada em `config/services.php`, o arquivo que o próprio Laravel já reserva para credenciais de serviços de terceiros:
+
+```php
+'google' => [
+    'client_id' => env('GOOGLE_CLIENT_ID'),
+],
+```
+
+`env()` só deve ser chamado dentro de arquivos de `config/`; em qualquer outro lugar (controller, view), a forma correta de ler esse valor é `config('services.google.client_id')` — é esse `config()` que a view do Passo 7.6 vai usar.
+
+**✅ Checkpoint:** `composer show google/apiclient` mostra `v2.19.4` (ou outra `v2.x`), não `v1.1.9`; `php artisan config:show services.google` mostra o Client ID do `.env`.
+
+**7.3 — a tabela `usuarios` ganha uma conta possível sem senha.** Uma pessoa que só loga pelo Google nunca digita uma senha neste app — então `password` precisa deixar de ser obrigatório, e uma nova coluna `google_id` precisa guardar o identificador estável que o Google atribui à conta (o campo `sub` do payload, que aparece no Passo 7.4):
+
+```bash
+php artisan make:migration add_google_id_to_usuarios_table --table=usuarios
+```
+
+```php
+public function up(): void
+{
+    Schema::table('usuarios', function (Blueprint $table) {
+        $table->string('password')->nullable()->change();
+        $table->string('google_id')->nullable()->unique()->after('password');
+    });
+}
+
+public function down(): void
+{
+    Schema::table('usuarios', function (Blueprint $table) {
+        $table->dropColumn('google_id');
+        $table->string('password')->nullable(false)->change();
+    });
+}
+```
+
+```bash
+php artisan migrate
+```
+
+Atualize o `$fillable` do model, em `app/Models/Usuario.php`:
+
+```php
+protected $fillable = ['nome', 'email', 'password', 'google_id'];
+```
+
+Isso levanta uma pergunta que vale testar de verdade, não supor: se uma conta existe só com Google (`password` nulo) e alguém tenta entrar por ela usando o **formulário de senha** do Passo 5, o que acontece? Em outras linguagens isso já quebrou de verdade — comparar uma senha com um hash nulo pode lançar exceção em vez de simplesmente "não bater". Testando contra este projeto, com um usuário `password = null` de propósito:
+
+```php
+Auth::attempt(['email' => 'conta-so-google@exemplo.com', 'password' => 'qualquercoisa']);
+// => false, sem exceção
+```
+
+Sem crash. `Auth::attempt()` chama, por baixo, `Hash::check()` — e o hasher do Laravel (`Illuminate\Hashing\AbstractHasher::check()`) tem essa checagem logo no início:
+
+```php
+if (is_null($hashedValue) || (string) $hashedValue === '') {
+    return false;
+}
+```
+
+Um hash nulo ou vazio nunca chega a ser passado para `password_verify()` — o método já devolve `false` antes disso. Não é preciso nenhuma guarda extra no `SessaoController::entrar()` para esse caso: uma conta só-Google recebe, ao tentar logar por senha, a mesma mensagem genérica "Credenciais inválidas" que qualquer outra tentativa errada — comportamento correto, e já coberto pelo código do Passo 5.
+
+**✅ Checkpoint:** `DESCRIBE usuarios` mostra `password` aceitando `NULL` e a nova coluna `google_id`; um usuário de teste com `password` nulo tentando logar pelo formulário de senha recebe a mensagem de erro normal, sem página de erro 500.
+
+**7.4 — confira o `credential` recebido, sem confiar em exceções para isso.** A chamada central é:
+
+```php
+use Google\Client;
+
+$client = new Client(['client_id' => $googleClientId]);
+$payload = $client->verifyIdToken($credential);
+```
+
+Aqui está uma diferença real em relação a bibliotecas Node como a `google-auth-library` (que rejeita uma *promise* quando o token é inválido, exigindo `try/catch`): o `google/apiclient` devolve `false` quando a verificação falha — assinatura errada, `aud` diferente do Client ID configurado, token expirado. É preciso checar `=== false` explicitamente, um `try/catch` sozinho não cobre esse caminho.
+
+Só que "devolve `false`" não é a história completa, e só ficou claro testando com um valor realmente malformado — não um JWT com assinatura errada, mas uma string que nem chega a ter o formato `cabeçalho.payload.assinatura`:
+
+```bash
+curl -X POST http://localhost:8000/login/google -d "credential=isto-nao-eh-um-jwt"
+```
+
+Isso derrubou a rota com um **500**, não um erro tratado. O motivo: por dentro, `verifyIdToken()` decodifica o token com a biblioteca `firebase/php-jwt`, e só captura internamente `ExpiredException`, `SignatureInvalidException` e `DomainException` — um token sem a estrutura de três segmentos faz o `firebase/php-jwt` lançar `UnexpectedValueException`, que escapa sem ser tratada. Ou seja: `verifyIdToken()` retorna `false` para *alguns* jeitos de token inválido, mas lança exceção para outros. Isolar essa chamada numa classe própria — em vez de espalhar `new Google\Client(...)` direto pelo controller — dá um lugar único para cobrir os dois casos:
+
+```php
+namespace App\Services;
+
+use Google\Client;
+
+class GoogleClientIdTokenVerifier implements GoogleIdTokenVerifier
+{
+    public function __construct(private readonly string $googleClientId) {}
+
+    public function verificar(string $credential): ?array
+    {
+        $client = new Client(['client_id' => $this->googleClientId]);
+
+        try {
+            $payload = $client->verifyIdToken($credential);
+        } catch (\UnexpectedValueException) {
+            return null;
+        }
+
+        return $payload === false ? null : $payload;
+    }
+}
+```
+
+com a interface correspondente:
+
+```php
+namespace App\Services;
+
+interface GoogleIdTokenVerifier
+{
+    /** @return array<string, mixed>|null */
+    public function verificar(string $credential): ?array;
+}
+```
+
+Por que uma interface para uma coisa tão pequena? Pelo mesmo motivo do `PostDAOInterface` que você vai construir no Tópico 4 — `verificar()` faz uma chamada de rede de verdade até o Google, então testar o controller sem depender de uma conta Google real exige poder trocar essa peça por uma versão falsa. O Tópico 4 nomeia esse padrão formalmente; aqui você já está usando a mesma ideia, um passo à frente. Registre o binding em `app/Providers/AppServiceProvider.php`, junto de qualquer outro bind que já exista ali:
+
+```php
+$this->app->bind(GoogleIdTokenVerifier::class, fn () => new GoogleClientIdTokenVerifier(
+    config('services.google.client_id')
+));
+```
+
+**✅ Checkpoint:** `php artisan tinker` consegue resolver `app(App\Services\GoogleIdTokenVerifier::class)` e o objeto devolvido é uma instância de `GoogleClientIdTokenVerifier`.
+
+**7.5 — o método `entrarComGoogle` no `SessaoController`.** Injete a interface pelo construtor — nunca instancie `Google\Client` direto dentro do controller, é exatamente essa instanciação direta que tornaria o passo seguinte impossível de testar sem rede:
+
+```php
+use App\Models\Usuario;
+use App\Services\GoogleIdTokenVerifier;
+
+class SessaoController extends Controller
+{
+    public function __construct(private readonly GoogleIdTokenVerifier $googleIdTokenVerifier) {}
+
+    // ...mostrarLogin(), entrar()...
+
+    public function entrarComGoogle(Request $request)
+    {
+        $dados = $request->validate([
+            'credential' => 'required|string',
+        ]);
+
+        $payload = $this->googleIdTokenVerifier->verificar($dados['credential']);
+
+        if ($payload === null) {
+            return back()->withErrors(['email' => 'Não foi possível confirmar sua identidade com o Google.']);
+        }
+
+        $usuario = Usuario::firstOrCreate(
+            ['google_id' => $payload['sub']],
+            ['nome' => $payload['name'], 'email' => $payload['email'], 'password' => null]
+        );
+
+        $lembrar = $request->boolean('lembrar');
+
+        Auth::login($usuario, $lembrar);
+        $request->session()->regenerate();
+
+        return redirect('/posts');
+    }
+}
+```
+
+Repare no que **não** muda em relação ao Passo 5: `Auth::login()` seguido de `$request->session()->regenerate()` é a mesma dupla de sempre, prevenindo a mesma *session fixation* de sempre. O que muda é só como se chega a um `$usuario` autenticável. `Usuario::firstOrCreate(['google_id' => ...], [...])` resolve, numa chamada, tanto "primeira vez que essa conta Google aparece" (cria a linha, com `password` nulo) quanto "essa conta já existia" (só localiza). Isso deixa um caso de fora, de propósito: alguém que já tem conta por senha tentando entrar pelo Google com o mesmo email esbarra na constraint `unique` de `email`, porque o `create` tentaria inserir uma linha nova com um email já cadastrado — um sistema real vincularia as duas contas nesse ponto; fica como exercício.
+
+**7.6 — a rota.** Sem `middleware('auth')`, pelo mesmo motivo do `/login` original: essa rota é quem *cria* a sessão, ninguém está autenticado antes dela.
+
+```php
+Route::post('/login/google', [SessaoController::class, 'entrarComGoogle']);
+```
+
+**7.7 — teste a rejeição de verdade, com o servidor no ar.** Isso não depende de nenhuma credencial Google real: a própria tentativa de verificar a assinatura já basta para rejeitar, e passa mesmo pela rede até as chaves públicas do Google antes de decidir que o token é inválido — mesmo o caminho de erro não é um atalho local:
+
+```bash
+php artisan serve
+
+# 1. pegue um cookie de sessão e o token CSRF da própria página de login
+curl -s -c cookies.txt http://localhost:8000/login -o login.html
+TOKEN=$(grep -o 'name="_token" value="[^"]*"' login.html | head -1 | sed 's/.*value="//;s/"//')
+
+# 2. envie um credential qualquer, claramente inválido
+curl -i -b cookies.txt -c cookies.txt -X POST http://localhost:8000/login/google \
+  -d "_token=$TOKEN" -d "credential=isto-nao-eh-um-jwt-valido"
+```
+
+A resposta é um `302` de volta para `/login` (não um 500), e a página de login volta mostrando "Não foi possível confirmar sua identidade com o Google." — a mesma `@if ($errors->any())` que o formulário de senha já usa, sem inventar um novo mecanismo de erro só para este caminho.
+
+**✅ Checkpoint:** `POST /login/google` com um `credential` inválido responde com um redirecionamento limpo e a mensagem de erro na tela, sem página de erro 500 — tanto para uma string qualquer quanto para um JWT com três segmentos e assinatura falsa.
+
+**7.8 — o botão do Google em `resources/views/sessao/login.blade.php`.** O `blog-app` é renderizado pelo servidor — não existe um `fetch` de SPA aqui, então o `callback` do botão precisa terminar num **POST de formulário HTML comum**, o mesmo jeito que o resto deste tópico já usa. A estratégia: um segundo `<form>`, escondido, com um campo `credential` que o JavaScript do Google preenche; o próprio JavaScript dispara o envio em seguida:
+
+```blade
+<form id="form-google" method="POST" action="/login/google">
+    @csrf
+    <input type="hidden" name="credential" id="google-credential">
+    <input type="hidden" name="lembrar" id="google-lembrar" value="0">
+</form>
+
+<div id="google-button" data-client-id="{{ config('services.google.client_id') }}"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+    function aoReceberCredencialGoogle(resposta) {
+        document.getElementById('google-credential').value = resposta.credential;
+        document.getElementById('google-lembrar').value =
+            document.querySelector('input[name="lembrar"]').checked ? '1' : '0';
+        document.getElementById('form-google').submit();
+    }
+
+    window.onload = function () {
+        const clientId = document.getElementById('google-button').dataset.clientId;
+
+        google.accounts.id.initialize({ client_id: clientId, callback: aoReceberCredencialGoogle });
+        google.accounts.id.renderButton(document.getElementById('google-button'), { theme: 'outline', size: 'large' });
+    };
+</script>
+```
+
+O Client ID chega à view via `config('services.google.client_id')` — o mesmo `config()` do Passo 7.2, nunca `env()` direto numa view — e vai para um atributo `data-client-id`, de onde o script lê. `aoReceberCredencialGoogle` é o `callback` que o Google chama assim que a pessoa termina o login na janela que ele mesmo abre; o objeto recebido tem um campo `.credential`, o ID token como string. Em vez de um `fetch`, essa função só copia o `credential` (e o valor atual do checkbox "lembrar-me" do formulário de senha) para o formulário escondido e chama `form.submit()` — um POST de página inteira como qualquer outro deste tutorial, com `@csrf` cuidando do resto.
+
+**✅ Checkpoint (honesto sobre o que dá para testar sem uma conta Google real):** com um Client ID de placeholder, `GET /login` carrega sem erro nenhum, o formulário de senha continua funcionando exatamente como antes, e `window.google` existe no console do navegador depois que a página termina de carregar — mas **nenhum botão aparece na tela**. O Google Identity Services falha assim de propósito: como o Client ID não é secreto, ele não pode dar pistas específicas sobre *por que* uma origem não está autorizada, então prefere não desenhar nada a desenhar um botão quebrado — sem erro no console, sem exceção lançada. Isso já dá para confirmar sem nenhum Client ID real. O clique no botão, a tela de escolha de conta do Google e o handshake completo do OAuth só existem com um Client ID real, criado no Passo 7.1 a partir da sua própria conta Google, e um navegador de verdade — nada disso roda num terminal. Configure seu próprio Client ID e teste o botão fim a fim antes de considerar este passo concluído.
 
 ### Armadilhas comuns — referência rápida
 
@@ -665,6 +934,8 @@ if (Auth::viaRemember()) {
 | A mensagem de erro nunca aparece | Chave da view difere da usada no controller | Use a mesma string nos dois lados |
 | Lembrar-me não persiste | Faltou o 2º argumento em `Auth::attempt()` | Passe a variável e confirme a coluna |
 | Usuário continua logado após "Sair" | Faltou `session()->invalidate()` | Use as três linhas do logout |
+| `composer require google/apiclient` instala a `v1.1.9`, com `Google_Client` em vez de `Google\Client` | Laravel 13 fixa `guzzlehttp/guzzle` em `^8`, e o `google/apiclient` 2.x exige `~7` — o Composer resolve em silêncio para a última versão sem esse conflito | `composer require "google/apiclient:^2.9" -W`, aceitando o rebaixamento do Guzzle no projeto inteiro |
+| `POST /login/google` com um `credential` malformado derruba a rota com **500** | `verifyIdToken()` só captura `ExpiredException`, `SignatureInvalidException` e `DomainException` internamente — um token sem 3 segmentos faz o `firebase/php-jwt` lançar `UnexpectedValueException`, que escapa | Capture `\UnexpectedValueException` também, ao redor da chamada a `verifyIdToken()` |
 
 ### Resumo do que você construiu
 
@@ -678,7 +949,14 @@ if (Auth::viaRemember()) {
 ✅ Auth::attempt() com o 2º argumento ativando o cookie de longa duração
 ✅ session()->regenerate() prevenindo session fixation
 ✅ Logout completo em três etapas
-✅ Rota de painel protegida por middleware e checagem de viaRemember()
+✅ Rotas protegidas por middleware('auth') (/logout, /posts/novo, POST /posts, DELETE /posts/{id})
+✅ Client ID do Google criado no Cloud Console, sem client secret
+✅ google/apiclient 2.x instalado (com o conflito de versão do Guzzle resolvido)
+✅ Coluna password opcional e google_id única, via migration, sem quebrar o login por senha existente
+✅ GoogleIdTokenVerifier isolando a verificação do ID token atrás de uma interface, testável sem rede
+✅ entrarComGoogle tratando tanto o false quanto a exceção que verifyIdToken() pode produzir
+✅ Mesmo Auth::login() + session()->regenerate() do login por senha, reaproveitados para a sessão vinda do Google
+✅ Botão "Entrar com Google" desenhado via Google Identity Services, com POST de formulário comum (sem fetch)
 ```
 
 ### Exercícios
@@ -687,12 +965,16 @@ if (Auth::viaRemember()) {
 2. **Confirmar senha**: exija a senha novamente antes de uma ação sensível quando o acesso veio do lembrar-me.
 3. **Sair de todos os dispositivos**: troque o token de lembrar-me no banco e observe os outros navegadores caírem.
 4. **Limite de tentativas**: pesquise o `RateLimiter` para bloquear após 5 tentativas de login falhas.
+5. **Avatar do Google**: o payload do ID token traz um campo `picture` — grave-o numa coluna nova e exiba-o em `/posts`, ao lado do nome do usuário logado.
+6. **Vincular contas**: trate o caso de um email já cadastrado por senha tentando entrar via Google — em vez de deixar o `firstOrCreate` esbarrar na constraint `unique` de `email`, localize a conta existente pelo email e vincule o `google_id` a ela.
 
 ### Perguntas de fixação
 
 1. Por que o cookie de sessão não guarda o ID do usuário diretamente?
 2. O que `session()->regenerate()` previne, e por que ele entra depois de `Auth::attempt()` e não antes?
 3. Por que o logout precisa de três chamadas, e não só de `Auth::logout()`?
+4. Dentro de `GoogleClientIdTokenVerifier::verificar()`, por que checar `$payload === false` sozinho não basta, sem o `try/catch` ao redor da chamada a `verifyIdToken()`?
+5. Depois de confirmar a identidade pelo Google, por que o código ainda chama `Auth::login()` e `session()->regenerate()`, em vez de simplesmente marcar o usuário como logado de alguma outra forma?
 
 ---
 
@@ -980,10 +1262,13 @@ public function up(): void
     Schema::create('comentarios', function (Blueprint $table) {
         $table->id();
         $table->text('texto');
+        $table->boolean('aprovado')->default(false);
         $table->timestamps();
     });
 }
 ```
+
+A coluna `aprovado` já entra aqui de propósito, não só depois: ela existe para o `$fillable` do model, logo abaixo, ficar **de fora** dela — a prova viva de que mass assignment protege até colunas que já existem na tabela, não só as que "ainda não foram pensadas".
 
 ```bash
 php artisan migrate
@@ -1141,7 +1426,7 @@ O ataque que isso previne é o *Cross-Site Request Forgery*: um site malicioso q
 
 1. **Rate limiting**: adicione o middleware `throttle` na rota de comentários para limitar tentativas de spam.
 2. **Sanitização de exibição**: pesquise a função de remover tags do PHP como alternativa quando parte do HTML precisa ser preservada, e discuta por que ela é pior que escapar.
-3. **Colunas sensíveis**: acrescente uma coluna `aprovado` na tabela de comentários, deixe-a **fora** do fillable, e comprove que um POST malicioso tentando marcá-la é ignorado.
+3. **Colunas sensíveis**: a tabela de comentários já tem a coluna `aprovado` (Passo 5), fora do `$fillable`. Comprove que um POST malicioso tentando marcá-la — `curl -d "texto=oi" -d "aprovado=1" ...` — é ignorado, e que a linha criada continua com `aprovado = 0` no banco.
 4. **Log de tentativas suspeitas**: registre em log toda vez que uma validação falhar na rota de comentários.
 
 ### Perguntas de fixação
@@ -1274,13 +1559,12 @@ use Illuminate\Support\Collection;
 interface PostDAOInterface
 {
     public function todos(): Collection;
-    public function porId(int $id): ?Post;
-    public function doAutor(int $usuarioId): Collection;
+    public function doUsuario(int $usuarioId): Collection;
     public function criar(array $dados): Post;
 }
 ```
 
-**Por que `Support\Collection` e não `Eloquent\Collection`.** Este detalhe decide se o Passo 6 vai funcionar. O Laravel tem duas classes de coleção: `Illuminate\Support\Collection`, genérica, e `Illuminate\Database\Eloquent\Collection`, que **estende** a primeira e é o que as consultas ao banco devolvem. Se a interface exigir a versão do Eloquent, qualquer implementação que **não** venha do banco fica impedida de cumprir o contrato — `collect()`, por exemplo, devolve a versão genérica, e o PHP lança um `TypeError` na hora do retorno. A regra geral: **a interface deve declarar o tipo mais geral que todas as implementações conseguem honrar.** Como a coleção do Eloquent é uma coleção genérica, declarar a genérica aceita as duas. O `?Post` no retorno de `porId` aplica o mesmo raciocínio à ausência: o método pode não encontrar nada, e o tipo diz isso explicitamente.
+**Por que `Support\Collection` e não `Eloquent\Collection`, por enquanto.** Este detalhe decide se o Passo 6 vai funcionar. O Laravel tem duas classes de coleção: `Illuminate\Support\Collection`, genérica, e `Illuminate\Database\Eloquent\Collection`, que **estende** a primeira e é o que as consultas ao banco devolvem. Se a interface exigir a versão do Eloquent, qualquer implementação que **não** venha do banco fica impedida de cumprir o contrato — `collect()`, por exemplo, devolve a versão genérica, e o PHP lança um `TypeError` na hora do retorno. A regra geral: **a interface deve declarar o tipo mais geral que todas as implementações conseguem honrar.** Como a coleção do Eloquent é uma coleção genérica, declarar a genérica aceita as duas. Guarde essa escolha: o Tópico 5 volta a este mesmo arquivo e a estreita de propósito, quando fica claro que a aplicação real só vai ter implementações vindas do banco.
 
 **✅ Checkpoint:** `php -l app/DAO/PostDAOInterface.php` não acusa erro de sintaxe.
 
@@ -1302,12 +1586,7 @@ class PostDAO implements PostDAOInterface
         return Post::with('usuario')->latest()->get();
     }
 
-    public function porId(int $id): ?Post
-    {
-        return Post::find($id);
-    }
-
-    public function doAutor(int $usuarioId): Collection
+    public function doUsuario(int $usuarioId): Collection
     {
         return Post::where('usuario_id', $usuarioId)->latest()->get();
     }
@@ -1423,12 +1702,7 @@ class PostDAOEmMemoria implements PostDAOInterface
         return collect($this->posts)->values();
     }
 
-    public function porId(int $id): ?Post
-    {
-        return $this->posts[$id] ?? null;
-    }
-
-    public function doAutor(int $usuarioId): Collection
+    public function doUsuario(int $usuarioId): Collection
     {
         return collect($this->posts)->where('usuario_id', $usuarioId)->values();
     }
@@ -1443,7 +1717,7 @@ class PostDAOEmMemoria implements PostDAOInterface
 }
 ```
 
-Dois cuidados: o array é indexado **pelo id**, não por posição — se `criar()` empilhasse com colchetes vazios, as chaves seriam 0, 1, 2... e `porId()` devolveria o post errado ou nada. O retorno é a coleção genérica, exatamente o tipo que a interface declarou no Passo 2 — se a interface exigisse a coleção do Eloquent, este método explodiria com `TypeError`.
+Um cuidado: o array é indexado **pelo id**, não por posição — se `criar()` empilhasse com colchetes vazios, as chaves seriam 0, 1, 2... e uma futura busca por id devolveria o post errado ou nada. O retorno é a coleção genérica, exatamente o tipo que a interface declarou no Passo 2 — se a interface exigisse a coleção do Eloquent, este método explodiria com `TypeError`.
 
 **Comprove a troca, sem tocar no controller.** No tinker:
 
@@ -1459,7 +1733,7 @@ $c->index()->getData()['posts'];
 
 `app()->instance(...)` substitui o que o container entrega para aquela interface. O `PostController` continua **exatamente** o mesmo arquivo, sem uma linha alterada, e agora serve dados que nunca passaram pelo banco. Numa suíte de testes é isso que permite exercitar a lógica do controller sem migrations, sem seed e sem I/O de disco — testes que rodam em milissegundos.
 
-**Verificado na implementação de referência**: rodando exatamente essa troca no tinker do `blog-app` real, `get_class(app(PostDAOInterface::class))` mudou de `App\DAO\PostDAO` para a classe em memória sem qualquer alteração em `PostController.php`.
+**Nota sobre o que fica no projeto depois deste passo:** `PostDAOEmMemoria` é um exercício deste tópico — construa-o e comprove a troca localmente, seguindo os comandos acima. Ele **não** está commitado em `app/DAO/` na implementação de referência: o Tópico 5, ao retomar este mesmo `PostDAOInterface`, estreita o tipo de retorno de volta para `Illuminate\Database\Eloquent\Collection` (veja o Passo 3 de lá), porque a partir dali a aplicação só passa a ter implementações vindas do banco. Se você mantiver `PostDAOEmMemoria` no projeto depois de fazer essa troca, ele para de compilar contra a interface — é o próprio PHP aplicando a regra de covariância que o Passo 2 explicou, na direção contrária.
 
 **✅ Checkpoint:** o mesmo `PostController` devolve os posts do banco antes da troca, e o post em memória depois — sem nenhuma alteração no controller.
 
@@ -1944,7 +2218,13 @@ O bloco de erros e o `old(...)` fazem a validação do Passo 5 aparecer para que
     <h1>Posts</h1>
 
     @auth
-        <p>Logado como {{ auth()->user()->nome }}. <a href="/posts/novo">Novo post</a></p>
+        <p>Logado como {{ auth()->user()->nome }}.
+            <a href="/posts/novo">Novo post</a>
+            <form method="POST" action="/logout" style="display:inline">
+                @csrf
+                <button type="submit">Sair</button>
+            </form>
+        </p>
     @else
         <p><a href="/login">Entrar</a> para publicar.</p>
     @endauth
@@ -1952,7 +2232,7 @@ O bloco de erros e o `old(...)` fazem a validação do Passo 5 aparecer para que
     @foreach($posts as $post)
         <article>
             <h2>{{ $post->titulo }}</h2>
-            <p>Por: {{ $post->usuario->nome }}</p>
+            <p>Por: {{ $post->usuario->nome ?? 'sem autor' }}</p>
             <p>{{ $post->conteudo }}</p>
         </article>
     @endforeach
@@ -1960,7 +2240,9 @@ O bloco de erros e o `old(...)` fazem a validação do Passo 5 aparecer para que
 </html>
 ```
 
-**✅ Checkpoint:** publicar um post logado como Bruno o mostra em `/posts` com "Por: Bruno Lima".
+O botão "Sair" chama exatamente a rota `POST /logout` do Tópico 2 (`SessaoController::sair`) — este é o primeiro lugar do projeto onde ele fica acessível pela interface, e não só testável por `curl`. `?? 'sem autor'` cobre o caso, ainda incomum aqui mas real, de um post cujo autor foi apagado: a chave estrangeira `usuario_id` usa `cascadeOnDelete()` (Tópico 4), então normalmente o post some junto — mas um post criado por um script ou seed sem usuário associado corretamente não quebraria a página.
+
+**✅ Checkpoint:** publicar um post logado como Bruno o mostra em `/posts` com "Por: Bruno Lima"; clicar em "Sair" desloga e volta ao formulário de login.
 
 ### Passo 7 — restrinja a exclusão ao autor do post
 
@@ -2152,7 +2434,9 @@ public function up(): void
     Schema::create('tarefas', function (Blueprint $table) {
         $table->id();
         $table->string('titulo');
+        $table->date('prazo')->nullable();
         $table->boolean('concluida')->default(false);
+        $table->string('tipo')->default('rotina'); // 'urgente' | 'rotina'
         $table->timestamps();
     });
 }
@@ -2161,6 +2445,8 @@ public function up(): void
 ```bash
 php artisan migrate
 ```
+
+`prazo` e `tipo` ainda não entram em nenhum método deste tópico — a tabela já nasce com o esquema completo (`nullable()` em `prazo`, porque nem toda tarefa precisa de data) para não exigir uma segunda migration de "adicionar coluna" mais adiante: o Tópico 7 (POO Aplicada) passa a usar `tipo`, e o Tópico 8 (Padrão MVC) em diante usa `prazo` para calcular urgência.
 
 Um `Model` Eloquent **é** uma classe PHP — o Laravel adiciona persistência (`Tarefa::create(...)`, `Tarefa::find(1)`) por cima dos mesmos conceitos de classes e objetos que você acabou de praticar.
 
@@ -2383,9 +2669,26 @@ Calcular "é urgente?" dentro do template mistura apresentação com regra de ne
 // app/Models/Tarefa.php
 public function isUrgente(): bool
 {
-    return !$this->concluida && now()->diffInDays($this->prazo) <= 2;
+    if ($this->concluida || ! $this->prazo) {
+        return false;
+    }
+
+    return now()->diffInDays($this->prazo, false) <= 2;
 }
 ```
+
+Duas coisas que uma versão mais curta, tipo `!$this->concluida && now()->diffInDays($this->prazo) <= 2`, deixaria passar: `prazo` é `nullable()` desde a migration do Tópico 6 — uma tarefa sem prazo (criada, por exemplo, direto no tinker) faria `diffInDays` explodir num objeto nulo sem o `! $this->prazo` antes. E o segundo argumento `false` em `diffInDays` pede a diferença **com sinal**, não o valor absoluto: sem ele, uma tarefa **já atrasada** também cairia dentro de "≤ 2".
+
+"Já atrasada" é, de propósito, um conceito **diferente** de "urgente" — e por isso mora no próprio método ao lado, não misturado dentro de `isUrgente()`:
+
+```php
+public function isAtrasada(): bool
+{
+    return ! $this->concluida && $this->prazo && $this->prazo->isPast();
+}
+```
+
+Mesma forma: regra de negócio no Model, nada de `if` de data em Controller ou View.
 
 ```blade
 {{-- CORRETO --}}
@@ -2396,9 +2699,22 @@ public function isUrgente(): bool
 @endforeach
 ```
 
-Agora a regra de "urgência" vive em **um único lugar** — o Model — e a View só pergunta, sem saber como a resposta é calculada.
+Agora a regra de "urgência" vive em **um único lugar** — o Model — e a View só pergunta, sem saber como a resposta é calculada. Volte também ao `calcularPrioridade()` do Tópico 7 e troque o cálculo repetido por uma chamada a este método novo:
 
-**✅ Checkpoint:** a página continua mostrando as mesmas tarefas urgentes, mas a lógica saiu do Blade.
+```php
+public function calcularPrioridade(): int
+{
+    return match ($this->tipo) {
+        'urgente' => $this->isUrgente() ? 10 : 5,
+        'rotina' => 1,
+        default => 0,
+    };
+}
+```
+
+Sem essa troca, a regra de "o que é urgente" ficaria duplicada em dois métodos do mesmo Model — exatamente o tipo de duplicação que este tópico existe para eliminar.
+
+**✅ Checkpoint:** a página continua mostrando as mesmas tarefas urgentes, mas a lógica saiu do Blade; `Tarefa::find(1)->calcularPrioridade()` continua devolvendo o mesmo valor de antes da troca.
 
 ### Passo 4 — mantenha o Controller enxuto, delegando ao Model
 
@@ -2415,7 +2731,7 @@ class TarefaController extends Controller
 }
 ```
 
-`$tarefas->filter->isUrgente()` é um atalho de Collection do Laravel — equivalente a `$tarefas->filter(fn($t) => $t->isUrgente())`. O Controller não calcula nada sozinho, só orquestra Model → View.
+`$tarefas->filter->isUrgente()` é um atalho de Collection do Laravel — equivalente a `$tarefas->filter(fn($t) => $t->isUrgente())`. O Controller não calcula nada sozinho, só orquestra Model → View. Guarde essa variável `$urgentes`: a partir daqui ela viaja junto com `$tarefas` por todos os tópicos seguintes — inclusive quando o Tópico 9 introduz paginação e o Tópico 12 introduz o DAO — porque é ela que `tarefas/index.blade.php` (Tópico 10) usa para mostrar "Urgentes nesta página".
 
 **✅ Checkpoint:** `/tarefas` mostra a contagem de tarefas urgentes vinda do Controller.
 
@@ -2438,16 +2754,18 @@ Route::resource('tarefas', TarefaController::class);
 ```
 ✅ Entendimento formal das três camadas: Model, View, Controller
 ✅ Identificação de uma violação real (regra de negócio dentro do Blade)
-✅ Regra de urgência movida para o Model (isUrgente())
+✅ Regra de urgência movida para o Model (isUrgente(), com guarda contra prazo nulo)
+✅ isAtrasada() ao lado, cobrindo um conceito relacionado mas diferente de "urgente"
+✅ calcularPrioridade() (Tópico 7) atualizado para reaproveitar isUrgente(), sem duplicar a regra
 ✅ Controller enxuto, delegando cálculo ao Model e escolha de View
 ✅ Route::resource gerando as 7 rotas RESTful convencionais
 ```
 
 ### Exercícios
 
-1. **isAtrasada()**: novo método no Model, sem repetir a lógica de data no Controller.
-2. **View Composer**: pesquise como compartilhar `$urgentes` com múltiplas views sem repetir no Controller.
-3. **Resource Controller completo**: implemente os 7 métodos gerados por `--resource`.
+1. **View Composer**: pesquise como compartilhar `$urgentes` com múltiplas views sem repetir no Controller (o Tópico 10 mostra a implementação real).
+2. **Resource Controller completo**: implemente os 7 métodos gerados por `--resource`.
+3. **isProxima()**: um método novo, ao lado de `isUrgente()`/`isAtrasada()`, para tarefas com prazo entre 3 e 7 dias — sem repetir o guard contra `prazo` nulo.
 
 ### Perguntas de fixação
 
@@ -2477,7 +2795,9 @@ class TarefaController extends Controller
     public function index()
     {
         $tarefas = Tarefa::orderByDesc('prazo')->paginate(10);
-        return view('tarefas.index', compact('tarefas'));
+        $urgentes = $tarefas->getCollection()->filter->isUrgente();
+
+        return view('tarefas.index', compact('tarefas', 'urgentes'));
     }
 
     public function show(Tarefa $tarefa)
@@ -2488,6 +2808,8 @@ class TarefaController extends Controller
 ```
 
 `show(Tarefa $tarefa)` usa **route model binding**: o Laravel automaticamente busca a `Tarefa` pelo `id` da URL e injeta o objeto pronto — sem `Tarefa::findOrFail($id)` manual.
+
+Repare que `index()` mudou de `->get()` (Tópico 8) para `->paginate(10)` — e por isso `$tarefas->filter->isUrgente()` também mudou para `$tarefas->getCollection()->filter->isUrgente()`. `paginate()` devolve um `LengthAwarePaginator`, não uma `Collection`: ele sabe navegar entre páginas e montar os links (Passo 5 do Tópico 10), mas não tem `filter()` diretamente. `getCollection()` pega só os itens **da página atual** como uma Collection de verdade, aí sim filtrável.
 
 **✅ Checkpoint:** `/tarefas/1` mostra a tarefa de id 1 sem código explícito de busca no Controller.
 
@@ -2504,6 +2826,7 @@ public function store(Request $request)
     $dados = $request->validate([
         'titulo' => 'required|string|max:150',
         'prazo' => 'required|date|after:today',
+        'tipo' => 'required|in:urgente,rotina',
     ]);
 
     Tarefa::create($dados);
@@ -2512,7 +2835,7 @@ public function store(Request $request)
 }
 ```
 
-`redirect()->route(...)->with(...)` redireciona após o POST (padrão PRG — Post/Redirect/Get, evita reenvio duplicado ao atualizar a página) e carrega uma mensagem flash para a próxima página.
+`redirect()->route(...)->with(...)` redireciona após o POST (padrão PRG — Post/Redirect/Get, evita reenvio duplicado ao atualizar a página) e carrega uma mensagem flash para a próxima página. `'tipo' => 'required|in:urgente,rotina'` é a regra `in:` — rejeita qualquer valor fora dessa lista, mesmo alguém adulterando o `<select>` do Passo 5 do Tópico 10 via DevTools. Sem essa validação, a coluna `tipo` (Tópico 6) nunca receberia outra coisa além do valor padrão `rotina` da migration, e a distinção urgente/rotina do Tópico 7 (POO Aplicada) nunca chegaria a aparecer numa tarefa criada de verdade pelo formulário.
 
 **✅ Checkpoint:** criar uma tarefa redireciona para `/tarefas` mostrando a mensagem de sucesso.
 
@@ -2529,6 +2852,7 @@ public function update(Request $request, Tarefa $tarefa)
     $dados = $request->validate([
         'titulo' => 'required|string|max:150',
         'prazo' => 'required|date',
+        'tipo' => 'required|in:urgente,rotina',
     ]);
 
     $tarefa->update($dados);
@@ -2537,7 +2861,7 @@ public function update(Request $request, Tarefa $tarefa)
 }
 ```
 
-`$tarefa->update($dados)` atualiza só os campos passados, mantendo o resto inalterado — mais direto que reatribuir cada atributo manualmente.
+`$tarefa->update($dados)` atualiza só os campos passados, mantendo o resto inalterado — mais direto que reatribuir cada atributo manualmente. Repare que `update()` não leva `after:today` em `prazo`, diferente de `store()`: editar uma tarefa cujo prazo já passou (por exemplo, para marcar como atrasada e ajustar só o título) não pode ser bloqueado pela mesma regra que impede **criar** uma tarefa já nascendo vencida.
 
 **✅ Checkpoint:** editar o título de uma tarefa e salvar reflete a mudança na tela de detalhes.
 
@@ -2696,7 +3020,7 @@ GET|HEAD   configuracoes/edit ........... configuracoes.edit
 
 Três rotas, nenhuma com `{configuracoes}` — a ausência do parâmetro na URL é a assinatura visual de um recurso singleton, bem diferente das 7 rotas de `/tarefas/{tarefa}` geradas pelo `Route::resource` do Passo 5.
 
-Para fechar o ciclo, use a configuração de verdade em vez de um número fixo — troque o `paginate(10)` que `TarefaController::index()` usa desde o Tópico 8:
+Para fechar o ciclo, use a configuração de verdade em vez de um número fixo — troque o `paginate(10)` que `TarefaController::index()` passou a usar no Passo 1 deste tópico (a linha de `$urgentes` logo abaixo continua igual, ela já lê da página atual via `getCollection()`):
 
 ```php
 $tarefas = Tarefa::orderByDesc('prazo')->paginate(Configuracao::atual()->tarefas_por_pagina);
@@ -2813,10 +3137,19 @@ Laravel 13.21 / Blade. Continuação do "Gerenciador de Tarefas".
 
 ```php
 // app/Providers/AppServiceProvider.php
+use App\Models\Tarefa;
+use Illuminate\Support\Facades\View;
+
 public function boot(): void
 {
     View::composer('layouts.app', function ($view) {
-        $view->with('totalUrgentes', Tarefa::where('prazo', '<=', now()->addDays(2))->count());
+        $view->with(
+            'totalUrgentes',
+            Tarefa::where('concluida', false)
+                ->whereNotNull('prazo')
+                ->where('prazo', '<=', now()->addDays(2))
+                ->count()
+        );
     });
 }
 ```
@@ -2826,29 +3159,43 @@ public function boot(): void
 <span>Urgentes: {{ $totalUrgentes }}</span>
 ```
 
-Um **View Composer** injeta dados automaticamente sempre que uma view específica é renderizada — evita repetir a mesma consulta em todo Controller que precisa mostrar esse contador no cabeçalho.
+Um **View Composer** injeta dados automaticamente sempre que uma view específica é renderizada — evita repetir a mesma consulta em todo Controller que precisa mostrar esse contador no cabeçalho. A consulta precisa dos três filtros: `where('concluida', false)` para não contar tarefa já resolvida como urgente; `whereNotNull('prazo')` porque `prazo` é `nullable()` (Tópico 6) e comparar `NULL <= data` no banco nunca dá verdadeiro, mas deixar a condição fora não expressa a intenção; e só então `where('prazo', '<=', now()->addDays(2))`, o próprio critério de urgência de `Tarefa::isUrgente()` — a mesma regra do Model, só que como consulta SQL em vez de checagem em memória, porque contar "urgentes no sistema todo" via `isUrgente()` exigiria carregar toda a tabela para a aplicação primeiro.
 
 **✅ Checkpoint:** o contador de urgentes aparece em qualquer página que estenda `layouts.app`, sem o Controller calcular isso explicitamente.
 
 ### Passo 5 — interaja com o Controller via formulário com validação exibida na View
 
 ```blade
-<!-- tarefas/create.blade.php -->
+<!-- resources/views/tarefas/create.blade.php -->
 @extends('layouts.app')
+
+@section('titulo', 'Nova tarefa')
+
 @section('conteudo')
+    <h1>Nova tarefa</h1>
+
     <form method="POST" action="{{ route('tarefas.store') }}">
         @csrf
         <input type="text" name="titulo" value="{{ old('titulo') }}">
         @error('titulo') <span class="erro">{{ $message }}</span> @enderror
+
+        <input type="date" name="prazo" value="{{ old('prazo') }}">
+        @error('prazo') <span class="erro">{{ $message }}</span> @enderror
+
+        <select name="tipo">
+            <option value="rotina" @selected(old('tipo') === 'rotina')>Rotina</option>
+            <option value="urgente" @selected(old('tipo') === 'urgente')>Urgente</option>
+        </select>
+        @error('tipo') <span class="erro">{{ $message }}</span> @enderror
 
         <button type="submit">Criar</button>
     </form>
 @endsection
 ```
 
-`old('titulo')` repopula o campo com o valor digitado se a validação falhar (evita o usuário perder o que já escreveu); `@error('titulo')` mostra a mensagem de erro daquele campo específico — ambos alimentados automaticamente pelo Laravel quando `$request->validate()` falha no Controller.
+`old('titulo')` repopula o campo com o valor digitado se a validação falhar (evita o usuário perder o que já escreveu); `@error('titulo')` mostra a mensagem de erro daquele campo específico — ambos alimentados automaticamente pelo Laravel quando `$request->validate()` falha no Controller. Os campos `prazo` e `tipo` completam o que `store()` (Tópico 9) já valida: sem eles no formulário, o `required` de `prazo` e o `in:urgente,rotina` de `tipo` rejeitariam **todo** envio, porque as chaves nem chegariam na requisição. `@selected(...)` é a diretiva Blade que marca a `<option>` certa depois de um envio inválido — o mesmo papel do `old()`, só que para `<select>`.
 
-**✅ Checkpoint:** submeter o formulário sem título mostra a mensagem de erro e mantém os outros campos preenchidos.
+**✅ Checkpoint:** submeter o formulário sem título mostra a mensagem de erro e mantém os outros campos preenchidos, inclusive a opção de tipo já selecionada.
 
 ### Resumo do que você construiu
 
@@ -2900,10 +3247,31 @@ Percorra mentalmente uma requisição real: `GET /tarefas/1` bate na rota, chama
 
 ```php
 // app/helpers.php
-if (!function_exists('formatar_prazo')) {
+if (! function_exists('formatar_prazo')) {
     function formatar_prazo($data): string
     {
+        if (! $data) {
+            return 'sem prazo';
+        }
+
         return $data->isToday() ? 'Hoje' : $data->format('d/m/Y');
+    }
+}
+
+if (! function_exists('tempo_restante')) {
+    function tempo_restante($prazo): string
+    {
+        if (! $prazo) {
+            return 'sem prazo';
+        }
+
+        $dias = now()->diffInDays($prazo, false);
+
+        if ($dias < 0) {
+            return 'atrasada há '.abs($dias).' dia(s)';
+        }
+
+        return "faltam {$dias} dia(s)";
     }
 }
 ```
@@ -2919,9 +3287,9 @@ if (!function_exists('formatar_prazo')) {
 composer dump-autoload
 ```
 
-Uma Helper Function fica disponível **globalmente**, sem precisar importar nenhuma classe — útil para pequenas formatações usadas em várias views, algo que não justifica virar um método de Model.
+Uma Helper Function fica disponível **globalmente**, sem precisar importar nenhuma classe — útil para pequenas formatações usadas em várias views, algo que não justifica virar um método de Model. As duas funções guardam a mesma cautela do `isUrgente()` do Tópico 8: `prazo` é `nullable()`, então as duas começam checando `! $data`/`! $prazo` antes de chamar qualquer método de data — sem essa guarda, uma tarefa sem prazo derrubaria a página inteira, não só o card daquela tarefa. `tempo_restante()` também usa `diffInDays($prazo, false)` com sinal, pelo mesmo motivo do Tópico 8: precisa distinguir "faltam 3 dias" de "atrasada há 3 dias", e o valor absoluto apagaria essa diferença.
 
-**✅ Checkpoint:** `{{ formatar_prazo($tarefa->prazo) }}` funciona em qualquer view sem `use` algum.
+**✅ Checkpoint:** `{{ formatar_prazo($tarefa->prazo) }}` e `{{ tempo_restante($tarefa->prazo) }}` funcionam em qualquer view sem `use` algum; para uma tarefa sem prazo, os dois devolvem "sem prazo" em vez de erro.
 
 ### Passo 3 — crie uma Blade directive customizada
 
@@ -2945,6 +3313,23 @@ Blade::directive('endurgente', function () {
 Diretivas customizadas deixam o Blade mais legível para regras usadas com frequência — `@urgente(...)` comunica a intenção melhor que um `@if($tarefa->isUrgente())` genérico espalhado pelo código.
 
 **✅ Checkpoint:** a tag "URGENTE" aparece só em tarefas cujo `isUrgente()` retorna `true`.
+
+Com as duas peças no ar, volte a `resources/views/components/tarefa-card.blade.php` (Tópico 10, Passo 3) e troque o `{{ $tarefa->prazo->format('d/m/Y') }}` cru pelas funções que você acabou de criar:
+
+```blade
+<div class="tarefa-card {{ $tarefa->isUrgente() ? 'urgente' : '' }}">
+    <h3>{{ $tarefa->titulo }}</h3>
+    <span>{{ formatar_prazo($tarefa->prazo) }} ({{ tempo_restante($tarefa->prazo) }})</span>
+
+    @urgente($tarefa)
+        <span class="badge">URGENTE</span>
+    @endurgente
+</div>
+```
+
+Esta é a versão final do componente, a mesma da implementação de referência: `formatar_prazo()` substitui o `format('d/m/Y')` que quebraria numa tarefa sem prazo, `tempo_restante()` acrescenta o "faltam N dias"/"atrasada há N dias" ao lado da data, e `@urgente`/`@endurgente` substitui a classe condicional por uma diretiva com nome — o card inteiro passa a usar as três peças deste tópico.
+
+**✅ Checkpoint:** um card de tarefa sem prazo mostra "sem prazo" duas vezes (na data e no tempo restante), sem gerar erro 500; um card de tarefa atrasada mostra "atrasada há N dia(s)".
 
 ### Passo 4 — revise a diferença entre Helper e Model method
 
@@ -2971,7 +3356,8 @@ Diretivas customizadas deixam o Blade mais legível para regras usadas com frequ
 
 ```
 ✅ Revisão do fluxo completo Route → Controller → Model → View
-✅ Helper Function global (formatar_prazo) sem precisar de import
+✅ Helper Functions globais (formatar_prazo, tempo_restante) sem precisar de import, com guarda contra prazo nulo
+✅ tarefa-card.blade.php na versão final, usando as duas helpers e a directive @urgente
 ✅ Blade directive customizada (@urgente/@endurgente)
 ✅ Critério claro entre Model method, Helper e Blade directive
 ✅ Checklist de auditoria MVC aplicado ao próprio projeto
@@ -2979,8 +3365,8 @@ Diretivas customizadas deixam o Blade mais legível para regras usadas com frequ
 
 ### Exercícios
 
-1. **Helper adicional**: crie `tempo_restante($prazo)` retornando "faltam X dias".
-2. **Directive condicional composta**: crie `@atrasada($tarefa)` para tarefas vencidas.
+1. **Helper adicional**: crie `dias_desde_criacao($tarefa)`, retornando há quantos dias a tarefa foi criada (`created_at`).
+2. **Directive condicional composta**: crie `@atrasada($tarefa)` para tarefas vencidas, reaproveitando `isAtrasada()` (Tópico 8).
 3. **Auditoria real**: rode o checklist do Passo 5 no seu projeto e corrija o que encontrar.
 
 ### Perguntas de fixação
@@ -3077,7 +3463,10 @@ class TarefaController extends Controller
 
     public function index()
     {
-        return view('tarefas.index', ['tarefas' => $this->dao->todas()]);
+        $tarefas = Tarefa::orderByDesc('prazo')->paginate(Configuracao::atual()->tarefas_por_pagina);
+        $urgentes = $tarefas->getCollection()->filter->isUrgente();
+
+        return view('tarefas.index', compact('tarefas', 'urgentes'));
     }
 
     public function store(Request $request)
@@ -3085,6 +3474,7 @@ class TarefaController extends Controller
         $dados = $request->validate([
             'titulo' => 'required|string|max:150',
             'prazo' => 'required|date|after:today',
+            'tipo' => 'required|in:urgente,rotina',
         ]);
 
         $this->dao->criar($dados);
@@ -3093,9 +3483,9 @@ class TarefaController extends Controller
 }
 ```
 
-Repare: o Controller não menciona `Tarefa::` nenhuma vez — toda a interação com o Eloquent passa pela interface, exatamente o mesmo princípio da aula "Padrão DAO", agora aplicado a **todos** os métodos do Controller.
+Repare que `store()` não menciona `Tarefa::` nenhuma vez — toda a escrita passa pela interface, exatamente o mesmo princípio da aula "Padrão DAO". `index()` é a exceção, de propósito: `todas()` da interface devolve uma `Collection` simples, sem paginação nem conhecimento da configuração de itens por página (Tópico 9) — encaixar isso na interface exigiria um método tipo `paginadas(int $porPagina)`, só para uma tela. A implementação de referência opta por deixar a **leitura paginada** direto no Controller via Eloquent, e reservar o DAO para as operações de **escrita** (`criar`, `atualizar`, `remover`), onde a troca de implementação (Passo 5) realmente importa — por exemplo, para testar `store`/`update`/`destroy` sem banco. Isso é uma escolha real de engenharia, não uma inconsistência: nem toda leitura precisa passar pela mesma abstração que as escritas.
 
-**✅ Checkpoint:** `/tarefas` e a criação de tarefas continuam funcionando, agora inteiramente via DAO.
+**✅ Checkpoint:** `/tarefas` e a criação de tarefas continuam funcionando, `store`/`update`/`destroy` inteiramente via DAO.
 
 ### Passo 4 — complete os métodos restantes usando o DAO
 
@@ -3105,6 +3495,7 @@ public function update(Request $request, Tarefa $tarefa)
     $dados = $request->validate([
         'titulo' => 'required|string|max:150',
         'prazo' => 'required|date',
+        'tipo' => 'required|in:urgente,rotina',
     ]);
 
     $this->dao->atualizar($tarefa, $dados);
@@ -3151,19 +3542,19 @@ class TarefaDAOEmMemoria implements TarefaDAOInterface
 $this->app->bind(TarefaDAOInterface::class, TarefaDAOEmMemoria::class);
 ```
 
-Trocar o binding faz o `TarefaController` inteiro rodar **sem tocar no banco de dados** — a prova concreta de que a separação via interface funcionou: o Controller nunca soube que a implementação mudou.
+Trocar o binding faz `store`, `update` e `destroy` rodarem **sem tocar no banco de dados** — a prova concreta de que a separação via interface funcionou nesses três métodos: o Controller nunca soube que a implementação mudou. `index()` é a exceção que o Passo 3 já assinalou: como ele lê direto de `Tarefa::` (não passa pelo DAO), trocar este binding não muda o que `/tarefas` lista — só o que `store`/`update`/`destroy` fazem com os dados.
 
-**Verificado na implementação de referência**: no tinker do `task-manager` real, `app()->instance(TarefaDAOInterface::class, $fake)` seguido de `app(TarefaController::class)` trocou a fonte de dados sem qualquer edição em `TarefaController.php` — o mesmo teste que o Tópico 4 fez para `PostController`, aqui repetido para `TarefaController`.
+**Nota sobre o que fica no projeto:** assim como `PostDAOEmMemoria` no Tópico 4, `TarefaDAOEmMemoria` é um exercício para você construir e testar localmente com os comandos acima — ele não está commitado em `app/DAO/` na implementação de referência, que só mantém `TarefaDAO` (a versão com Eloquent).
 
 **✅ Checkpoint:** você entende por que isso torna testes de Controller muito mais rápidos (sem I/O de banco).
 
 ### Resumo do que você construiu
 
 ```
-✅ TarefaDAOInterface e TarefaDAO cobrindo todos os métodos do Controller
-✅ Binding registrado e injetado via construtor, sem menção a Eloquent no Controller
-✅ store/update/destroy operando inteiramente através do DAO
-✅ Implementação alternativa em memória, trocável sem alterar o Controller
+✅ TarefaDAOInterface e TarefaDAO cobrindo criar/atualizar/remover/buscar por id
+✅ Binding registrado e injetado via construtor
+✅ store/update/destroy operando inteiramente através do DAO — index() continua lendo direto, por escolha consciente
+✅ Implementação alternativa em memória (exercício local), trocável sem alterar store/update/destroy
 ✅ Entendimento de por que isso acelera testes automatizados
 ```
 
@@ -3175,9 +3566,9 @@ Trocar o binding faz o `TarefaController` inteiro rodar **sem tocar no banco de 
 
 ### Perguntas de fixação
 
-1. Depois desta integração, quantas linhas do `TarefaController` mencionam `Tarefa::` diretamente? Por que esse número importa?
+1. Depois desta integração, quantas linhas do `TarefaController` mencionam `Tarefa::` diretamente, e em qual método? Por que essa é a exceção consciente, e não um descuido?
 2. Por que `update`/`destroy` continuam usando route model binding mesmo depois de introduzir o DAO?
-3. O que precisaria mudar no `TarefaController` para trocar `TarefaDAO` por `TarefaDAOEmMemoria`?
+3. O que precisaria mudar no `TarefaController` para trocar `TarefaDAO` por `TarefaDAOEmMemoria` em `store`/`update`/`destroy`? E o que **não** mudaria, mesmo com essa troca, em `index()`?
 
 ---
 
@@ -3271,6 +3662,8 @@ Em `resources/views/livewire/tarefa-lista.blade.php`:
                     Concluir
                 </button>
             @endunless
+
+            <button wire:click="remover({{ $tarefa->id }})">Excluir</button>
         </div>
     @endforeach
 </div>
@@ -3284,16 +3677,18 @@ public function concluir(int $tarefaId): void
     $tarefa = app(TarefaDAOInterface::class)->porId($tarefaId);
     $tarefa->update(['concluida' => true]);
 }
+
+public function remover(int $tarefaId): void
+{
+    $tarefa = app(TarefaDAOInterface::class)->porId($tarefaId);
+    app(TarefaDAOInterface::class)->remover($tarefa);
+}
 ```
 
-`wire:click="concluir({{ $tarefa->id }})"` dispara uma chamada ao servidor que executa o método PHP `concluir()` e **automaticamente** re-renderiza o componente com o novo estado — nenhum `fetch`, nenhum header CSRF manual, nenhuma manipulação de DOM feita por você. Inclua o componente na página com a diretiva Blade:
+`wire:click="concluir({{ $tarefa->id }})"` dispara uma chamada ao servidor que executa o método PHP `concluir()` e **automaticamente** re-renderiza o componente com o novo estado — nenhum `fetch`, nenhum header CSRF manual, nenhuma manipulação de DOM feita por você. `remover()` segue exatamente o mesmo padrão, chamando o `remover()` do próprio `TarefaDAOInterface` (Tópico 12) em vez de `$tarefa->delete()` direto — o componente Livewire nunca fala com o Eloquent, igual a qualquer outro consumidor do DAO. Acrescente o componente **dentro** de `resources/views/tarefas/index.blade.php` (Tópico 10) — sem substituir o que já está lá, só somando uma linha ao final de `@section('conteudo')`:
 
 ```blade
-<!-- resources/views/tarefas/index.blade.php -->
-@extends('layouts.app')
-@section('conteudo')
     @livewire('tarefa-lista')
-@endsection
 ```
 
 **✅ Checkpoint:** clicar em "Concluir" atualiza o card visualmente sem reload de página, sem nenhum JavaScript escrito por você.
@@ -3342,7 +3737,7 @@ class TarefaForm extends Component
     {
         $this->validate();
 
-        $dao->criar(['titulo' => $this->titulo, 'prazo' => $this->prazo]);
+        $dao->criar(['titulo' => $this->titulo, 'prazo' => $this->prazo, 'tipo' => 'rotina']);
 
         $this->reset(['titulo', 'prazo']);
         $this->dispatch('tarefa-criada');
@@ -3368,23 +3763,58 @@ class TarefaForm extends Component
 </form>
 ```
 
-`wire:model` sincroniza o valor do input com a propriedade pública do componente a cada interação; `#[Validate(...)]` é um **atributo PHP 8** que declara a regra de validação direto na propriedade, sem precisar chamar `$request->validate()` manualmente — o Livewire injeta o `TarefaDAOInterface` no método `salvar()` da mesma forma que o Laravel injeta dependências em Controllers.
+`wire:model` sincroniza o valor do input com a propriedade pública do componente a cada interação; `#[Validate(...)]` é um **atributo PHP 8** que declara a regra de validação direto na propriedade, sem precisar chamar `$request->validate()` manualmente — o Livewire injeta o `TarefaDAOInterface` no método `salvar()` da mesma forma que o Laravel injeta dependências em Controllers. Este formulário reativo não pergunta o `tipo` — ele sempre cria como `'rotina'`, deixando a criação de tarefas `urgente` (Tópico 9) para o formulário tradicional em `tarefas/create.blade.php`, que já tem o `<select>`. É uma limitação intencional deste componente, não um campo esquecido.
 
 **✅ Checkpoint:** submeter o formulário sem título mostra o erro de validação sem recarregar a página; preenchido corretamente, cria a tarefa e limpa os campos.
+
+### Passo 7 — monte a versão final de tarefas/index.blade.php
+
+Some `@livewire('tarefa-form')` ao mesmo arquivo, do mesmo jeito aditivo do Passo 4. Juntando tudo que os Tópicos 9, 10 e 13 acrescentaram nesta mesma view — a listagem paginada, o contador de urgentes, o link para o formulário tradicional e os dois componentes Livewire — o arquivo final é este:
+
+```blade
+<!-- resources/views/tarefas/index.blade.php -->
+@extends('layouts.app')
+
+@section('titulo', 'Minhas Tarefas')
+
+@section('conteudo')
+    <h1>Tarefas</h1>
+    <p>Urgentes nesta página: {{ $urgentes->count() }}</p>
+
+    <a href="{{ route('tarefas.create') }}">Nova tarefa (formulário tradicional)</a>
+
+    @foreach($tarefas as $tarefa)
+        <x-tarefa-card :tarefa="$tarefa" />
+        <a href="{{ route('tarefas.show', $tarefa) }}">Ver</a>
+    @endforeach
+
+    {{ $tarefas->links() }}
+
+    <hr>
+
+    <h2>Interatividade sem reload (Livewire)</h2>
+    @livewire('tarefa-form')
+    @livewire('tarefa-lista')
+@endsection
+```
+
+`{{ $tarefas->links() }}` renderiza os links de paginação do `LengthAwarePaginator` (Tópico 9) — sem essa linha, `paginate()` continuaria limitando a lista, só que sem nenhum jeito de navegar para a página seguinte. Note as duas formas de criar uma tarefa convivendo na mesma tela: o link "Nova tarefa (formulário tradicional)" leva à rota `tarefas.create` de página inteira (única com o `<select>` de `tipo`), enquanto `@livewire('tarefa-form')` cria por baixo, sem reload, sempre como `rotina`.
+
+**✅ Checkpoint:** `/tarefas` mostra, na mesma tela: o contador de urgentes da página atual, os links de paginação, o formulário reativo do Livewire e a lista com os botões "Concluir"/"Excluir".
 
 ### Resumo do que você construiu
 
 ```
 ✅ Livewire instalado e diretivas registradas no layout
 ✅ Componente TarefaLista renderizando dados via DAO, sem JavaScript manual
-✅ wire:click executando ações PHP diretamente a partir do clique do usuário
+✅ wire:click executando concluir()/remover() diretamente a partir do clique do usuário, os dois via TarefaDAOInterface
 ✅ wire:loading/wire:target dando feedback visual durante requisições
-✅ Formulário reativo com wire:model, wire:submit e #[Validate] (PHP 8 Attribute)
+✅ Formulário reativo com wire:model, wire:submit e #[Validate] (PHP 8 Attribute), criando sempre tipo=rotina
 ```
 
 ### Exercícios
 
-1. **Exclusão reativa**: adicione um botão "Excluir" no `TarefaLista` chamando um método `remover()` via `wire:click`.
+1. **Confirmação antes de excluir**: use `wire:click` com `wire:confirm="Excluir esta tarefa?"` no botão "Excluir" do `TarefaLista`.
 2. **Busca em tempo real**: adicione uma propriedade `$busca` com `wire:model.live` filtrando a lista a cada tecla digitada.
 3. **Evento entre componentes**: use `dispatch()` / `#[On(...)]` para que `TarefaForm` avise `TarefaLista` a recarregar após criar uma tarefa.
 4. **Comparação**: pesquise como o mesmo fluxo seria implementado com Fetch API puro (a abordagem original do currículo) ou com Inertia.js + Vue/React, e liste 2 diferenças de abordagem em relação ao Livewire.
@@ -3459,14 +3889,18 @@ php artisan make:resource TarefaResource
 ```
 
 ```php
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
 class TarefaResource extends JsonResource
 {
-    public function toArray($request): array
+    public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
             'titulo' => $this->titulo,
-            'prazo' => $this->prazo->format('Y-m-d'),
+            'prazo' => $this->prazo?->format('Y-m-d'),
+            'concluida' => $this->concluida,
             'urgente' => $this->isUrgente(),
         ];
     }
@@ -3478,7 +3912,7 @@ public function index()
 }
 ```
 
-Um API Resource controla exatamente **quais campos** vão para o JSON e em que formato — evita expor colunas internas do banco (ex: `updated_at` bruto) e formata datas de forma consistente.
+Um API Resource controla exatamente **quais campos** vão para o JSON e em que formato — evita expor colunas internas do banco (ex: `updated_at` bruto) e formata datas de forma consistente. `$this->prazo?->format('Y-m-d')` usa o operador de encadeamento nulo (`?->`): como `prazo` é `nullable()` desde o Tópico 6, uma tarefa sem prazo devolveria `null` direto, em vez de derrubar a resposta inteira com um erro tentando chamar `format()` num valor nulo — a mesma cautela de `formatar_prazo()` (Tópico 11), só que na direção de uma API JSON em vez de uma view.
 
 **✅ Checkpoint:** `GET /api/tarefas` retorna o campo `urgente` calculado, não presente diretamente na tabela.
 
@@ -3490,6 +3924,7 @@ public function store(Request $request)
     $dados = $request->validate([
         'titulo' => 'required|string|max:150',
         'prazo' => 'required|date|after:today',
+        'tipo' => 'required|in:urgente,rotina',
     ]);
 
     $tarefa = $this->dao->criar($dados);
@@ -3501,9 +3936,37 @@ Se a validação falhar, o Laravel retorna automaticamente **422** com um JSON d
 
 **✅ Checkpoint:** `POST /api/tarefas` sem título retorna 422 com o JSON de erros.
 
-**Verificado na implementação de referência**: contra a API real do `task-manager`, `POST /api/tarefas` sem `titulo` devolveu `422` com `{"message":"The titulo field is required.","errors":{"titulo":[...]}}`; com dados válidos devolveu `201` com o recurso formatado (incluindo `urgente` calculado); `PUT /api/tarefas/{id}` devolveu `200`; e `DELETE /api/tarefas/{id}` devolveu `204 No Content` — os quatro códigos de status confirmados na mesma sessão de testes via `curl`.
+### Passo 5 — implemente update/destroy da API
 
-### Passo 5 — compare a API com o "Web Service" tradicional (contexto)
+```php
+public function update(Request $request, Tarefa $tarefa)
+{
+    $dados = $request->validate([
+        'titulo' => 'sometimes|string|max:150',
+        'prazo' => 'sometimes|date',
+        'tipo' => 'sometimes|in:urgente,rotina',
+    ]);
+
+    $this->dao->atualizar($tarefa, $dados);
+
+    return new TarefaResource($tarefa);
+}
+
+public function destroy(Tarefa $tarefa)
+{
+    $this->dao->remover($tarefa);
+
+    return response()->noContent();
+}
+```
+
+`sometimes` troca de regra em relação ao `required` do `store()`: numa API JSON, é comum um cliente mandar só o campo que mudou (`{"concluida": true}`, por exemplo, sem repetir `titulo` e `prazo`) — `sometimes` só valida um campo **se ele estiver presente** na requisição, em vez de exigi-lo sempre. `response()->noContent()` devolve **204 No Content**: o corpo vazio é intencional, é a convenção REST para "a exclusão funcionou, não há nada a devolver".
+
+**✅ Checkpoint:** `PUT /api/tarefas/{id}` com um JSON parcial (só `titulo`, por exemplo) atualiza apenas esse campo e devolve 200; `DELETE /api/tarefas/{id}` devolve 204 sem corpo.
+
+**Verificado na implementação de referência**: contra a API real do `task-manager`, `POST /api/tarefas` sem `titulo` devolveu `422` com `{"message":"The titulo field is required.","errors":{"titulo":[...]}}`; com dados válidos devolveu `201` com o recurso formatado (incluindo `urgente` calculado); `PUT /api/tarefas/{id}` só com `{"titulo": "Novo título"}` devolveu `200` sem exigir os outros campos; e `DELETE /api/tarefas/{id}` devolveu `204 No Content` — os quatro códigos de status confirmados na mesma sessão de testes via `curl`.
+
+### Passo 6 — compare a API com o "Web Service" tradicional (contexto)
 
 | Aspecto | Sua API (REST/JSON) | Web Service tradicional (SOAP) |
 |---|---|---|
@@ -3520,16 +3983,17 @@ Sua API de tarefas, construída em poucos passos com `apiResource` + `JsonResour
 ```
 ✅ Controller de API dedicado, separado do controller web
 ✅ apiResource gerando as 5 rotas convencionais de API
-✅ TarefaResource controlando o formato exato do JSON retornado
+✅ TarefaResource controlando o formato exato do JSON retornado, com prazo nulo tratado via ?->
 ✅ store() com validação retornando 422 automático em caso de erro
+✅ update()/destroy() completando os 5 métodos do apiResource, com validação sometimes e 204 No Content
 ✅ Comparação prática entre sua API REST e o modelo SOAP tradicional
 ```
 
 ### Exercícios
 
-1. **update/destroy da API**: complete os métodos restantes do `apiResource`.
-2. **Paginação**: adicione `paginate()` ao `index()` e observe o formato de resposta do Laravel.
-3. **Versionamento**: mova as rotas para `/api/v1/tarefas` e explique por que isso é útil.
+1. **Paginação**: adicione `paginate()` ao `index()` e observe o formato de resposta do Laravel.
+2. **Versionamento**: mova as rotas para `/api/v1/tarefas` e explique por que isso é útil.
+3. **PATCH vs PUT**: `Route::apiResource` registra `update` em ambos os verbos. Pesquise a diferença semântica entre eles e discuta se a validação `sometimes` do Passo 5 combina melhor com um dos dois.
 
 ### Perguntas de fixação
 
@@ -3616,31 +4080,38 @@ Dois projetos Laravel separados, um por linha de tópicos. Cada arquivo abaixo e
 ```
 blog-app/
 ├── .env
-├── composer.json
+├── .env.example                         ← Tópico 2 (placeholder de GOOGLE_CLIENT_ID)
+├── composer.json                        ← Tópico 2 (google/apiclient 2.x)
 ├── routes/
 │   ├── web.php                          ← Tópicos 1, 2, 3, 5
 │   └── api.php                          ← Tópico 1
 ├── bootstrap/app.php                    ← Tópico 1 (registro de routes/api.php)
+├── config/services.php                  ← Tópico 2 (services.google.client_id)
+├── database/migrations/
+│   └── ..._add_google_id_to_usuarios_table.php ← Tópico 2 (password opcional, google_id)
 ├── app/
 │   ├── Models/
-│   │   ├── Usuario.php                  ← Tópico 2 (Authenticatable, hasMany posts do Tópico 5)
+│   │   ├── Usuario.php                  ← Tópico 2 (Authenticatable, google_id, hasMany posts do Tópico 5)
 │   │   ├── Post.php                     ← Tópicos 4/5 (belongsTo)
 │   │   └── Comentario.php               ← Tópico 3 (fillable, mass assignment)
 │   ├── DAO/
 │   │   ├── PostDAOInterface.php         ← Tópico 4
 │   │   └── PostDAO.php                  ← Tópico 4
+│   ├── Services/
+│   │   ├── GoogleIdTokenVerifier.php         ← Tópico 2
+│   │   └── GoogleClientIdTokenVerifier.php   ← Tópico 2
 │   ├── Http/Controllers/
 │   │   ├── NewsletterController.php     ← Tópico 1
 │   │   ├── BuscaController.php          ← Tópico 3
 │   │   ├── ComentarioController.php     ← Tópico 3
-│   │   ├── SessaoController.php         ← Tópico 2 (login/logout/painel)
+│   │   ├── SessaoController.php         ← Tópico 2 (mostrarLogin/entrar/sair + entrarComGoogle)
 │   │   └── PostController.php           ← Tópicos 4/5 (DAO + auth + 403 de dono)
-│   └── Providers/AppServiceProvider.php ← Tópico 4 (bind do PostDAOInterface)
+│   └── Providers/AppServiceProvider.php ← Tópico 4 (bind do PostDAOInterface); Tópico 2 (bind do GoogleIdTokenVerifier)
 └── resources/views/
     ├── newsletter.blade.php             ← Tópico 1
     ├── busca.blade.php                  ← Tópico 3
     ├── comentarios.blade.php            ← Tópico 3
-    ├── sessao/login.blade.php           ← Tópico 2
+    ├── sessao/login.blade.php           ← Tópico 2 (formulário de senha + botão do Google)
     └── posts/
         ├── index.blade.php              ← Tópico 5
         └── novo.blade.php               ← Tópico 5
@@ -3655,9 +4126,10 @@ task-manager/
 ├── .env
 ├── composer.json                        ← Tópico 11 (autoload de app/helpers.php)
 ├── routes/
-│   ├── web.php                          ← Tópico 8 (Route::resource)
+│   ├── web.php                          ← Tópicos 8/9 (Route::resource, Invokable, Singleton)
 │   └── api.php                          ← Tópico 14 (Route::apiResource)
 ├── database/migrations/
+│   ├── ..._create_tarefas_table.php       ← Tópico 6 (titulo, concluida; prazo/tipo já previstos para 7/8)
 │   └── ..._create_configuracoes_table.php ← Tópico 9 (singleton, já nasce com uma linha)
 ├── app/
 │   ├── helpers.php                      ← Tópico 11 (formatar_prazo, tempo_restante)
@@ -3669,7 +4141,7 @@ task-manager/
 │   │   └── TarefaDAO.php                ← Tópico 12
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── TarefaController.php               ← Tópicos 8/9/12 (7 métodos RESTful via DAO)
+│   │   │   ├── TarefaController.php               ← Tópicos 8/9/12 (7 métodos RESTful; store/update/destroy via DAO, index/show direto via Eloquent)
 │   │   │   ├── MarcarTarefaConcluidaController.php ← Tópico 9 (Invokable, --invokable)
 │   │   │   ├── ConfiguracaoController.php          ← Tópico 9 (Singleton, --singleton)
 │   │   │   └── Api/TarefaController.php            ← Tópico 14 (5 métodos JSON, --api)
@@ -3679,14 +4151,14 @@ task-manager/
 │   │   └── TarefaForm.php               ← Tópico 13
 │   └── Providers/AppServiceProvider.php ← Tópicos 10/11/12 (View Composer, directive @urgente, bind do DAO)
 └── resources/views/
-    ├── layouts/app.blade.php            ← Tópico 10 (@yield, View Composer totalUrgentes)
-    ├── components/tarefa-card.blade.php ← Tópico 10 (+ @urgente do Tópico 11)
+    ├── layouts/app.blade.php            ← Tópico 10 (@yield, View Composer totalUrgentes) + Tópico 13 (@livewireStyles/@livewireScripts)
+    ├── components/tarefa-card.blade.php ← Tópico 10 (+ formatar_prazo/tempo_restante/@urgente do Tópico 11)
     ├── livewire/
     │   ├── tarefa-lista.blade.php       ← Tópico 13
     │   └── tarefa-form.blade.php        ← Tópico 13
     ├── tarefas/
-    │   ├── index.blade.php              ← Tópicos 9/10/13
-    │   ├── create.blade.php             ← Tópico 9
+    │   ├── index.blade.php              ← Tópicos 10/13 (montagem final no Passo 7 do Tópico 13)
+    │   ├── create.blade.php             ← Tópicos 9/10 (campos prazo/tipo no Passo 5 do Tópico 10)
     │   ├── show.blade.php               ← Tópico 9 (+ botão "concluir" do Invokable)
     │   └── edit.blade.php               ← Tópico 9
     └── configuracoes/
@@ -3694,4 +4166,4 @@ task-manager/
         └── edit.blade.php               ← Tópico 9 (Singleton)
 ```
 
-Um usuário navegando pelo `task-manager` de ponta a ponta: abre `/tarefas` (**Controller** `TarefaController@index`, que delega ao `TarefaDAO` — **Model** por trás da interface — pagina usando `Configuracao::atual()->tarefas_por_pagina` e devolve `tarefas/index.blade.php` — **View** — dentro do `layouts.app`, cujo View Composer já injetou `$totalUrgentes` sem o Controller pedir); cada tarefa aparece através do componente `<x-tarefa-card />`, que usa a directive `@urgente` e o helper `formatar_prazo()`; na tela de detalhes, um botão aciona o `MarcarTarefaConcluidaController` (Invokable) para alternar a conclusão sem passar por `TarefaController`; em `/configuracoes`, o `ConfiguracaoController` (Singleton) mostra e edita a única linha de configuração do sistema, sem `id` nenhum na URL; na mesma página de tarefas, o componente Livewire `TarefaLista` permite marcar tarefas como concluídas com um clique, sem reload; `TarefaForm`, outro componente Livewire, cria tarefas reativamente, validando com `#[Validate(...)]`; em paralelo, `GET /api/tarefas` devolve a mesma informação em JSON, formatada por `TarefaResource`, através de um quarto tipo de Controller (`--api`), para consumo por outro programa — prontas para uma eventual apresentação via Postman, como pede o Tópico 15.
+Um usuário navegando pelo `task-manager` de ponta a ponta: abre `/tarefas` (**Controller** `TarefaController@index`, que consulta o **Model** `Tarefa` diretamente — a exceção deliberada do Tópico 12, já que paginar por `Configuracao::atual()->tarefas_por_pagina` não é algo que `TarefaDAOInterface::todas()` sabe fazer — e devolve `tarefas/index.blade.php` — **View** — dentro do `layouts.app`, cujo View Composer já injetou `$totalUrgentes` sem o Controller pedir); cada tarefa aparece através do componente `<x-tarefa-card />`, que usa a directive `@urgente` e os helpers `formatar_prazo()`/`tempo_restante()`; na tela de detalhes, um botão aciona o `MarcarTarefaConcluidaController` (Invokable) para alternar a conclusão sem passar por `TarefaController`; em `/configuracoes`, o `ConfiguracaoController` (Singleton) mostra e edita a única linha de configuração do sistema, sem `id` nenhum na URL; na mesma página de tarefas, o componente Livewire `TarefaLista` permite marcar tarefas como concluídas com um clique, sem reload; `TarefaForm`, outro componente Livewire, cria tarefas reativamente, validando com `#[Validate(...)]`; em paralelo, `GET /api/tarefas` devolve a mesma informação em JSON, formatada por `TarefaResource`, através de um quarto tipo de Controller (`--api`), para consumo por outro programa — prontas para uma eventual apresentação via Postman, como pede o Tópico 15.
