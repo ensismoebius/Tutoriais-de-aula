@@ -14,6 +14,8 @@ Se o MariaDB acusar `Cannot load from mysql.proc` ao rodar as migrations, rode `
 
 ## Rodando o projeto
 
+No Windows, rode `cd ~` no PowerShell antes do `composer install` se ainda não fez isso nesta sessão — o PowerShell às vezes abre numa pasta sem permissão de escrita para o seu usuário, e nesse caso o Composer falha ao instalar as dependências.
+
 ```bash
 composer install
 cp .env.example .env       # depois edite DB_USERNAME/DB_PASSWORD com suas credenciais

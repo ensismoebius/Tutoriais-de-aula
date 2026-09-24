@@ -108,6 +108,14 @@ php artisan serve
 
 **✅ Checkpoint:** `http://localhost:8000` mostra a tela padrão do Laravel.
 
+> ⚠️ **No Windows, rode este comando a partir da sua pasta pessoal.** Dependendo de como o PowerShell foi aberto, ele pode iniciar numa pasta onde o seu usuário não tem permissão de escrita — e aí o `composer create-project` falha ao tentar criar a pasta do projeto. Antes de rodar qualquer comando deste tutorial no PowerShell, garanta que está na sua pasta pessoal:
+>
+> ```powershell
+> cd ~
+> ```
+>
+> `~` é um atalho para a sua pasta pessoal (`C:\Users\<seu-usuário>`) — funciona tanto no PowerShell quanto no terminal do Linux/macOS usado no resto deste tutorial.
+
 > 💡 Se você for usar um assistente de IA (Claude Code, Cursor, e outros) para ajudar a construir este projeto, considere instalar o **Laravel Boost** — um pacote oficial do próprio time do Laravel, feito exatamente para isso. Ele expõe, via MCP, ferramentas específicas do seu projeto (rodar `tinker`, consultar o schema do banco, buscar na documentação da versão exata do Laravel instalada, entre outras) e gera um `AGENTS.md`/`CLAUDE.md` com boas práticas específicas do ecossistema Laravel — reduzindo o risco de o assistente sugerir uma API de uma versão diferente da que está instalada aqui. É opcional, não faz parte do currículo, e não muda nada no código do projeto em si:
 >
 > ```bash
@@ -2420,6 +2428,8 @@ Colocar a validação no construtor garante que **nenhum** objeto `Tarefa` invá
 composer create-project laravel/laravel task-manager
 cd task-manager
 ```
+
+> ⚠️ No Windows, lembre-se de rodar `cd ~` antes deste comando se ainda não fez isso nesta sessão do PowerShell — ver a nota no Passo 2 do Tópico 1.
 
 > 💡 Se você instalou o **Laravel Boost** no `blog-app` (Tópico 1) e quer o mesmo suporte de IA aqui, é por projeto — repita `composer require laravel/boost --dev` e `php artisan boost:install` dentro deste novo projeto `task-manager`.
 

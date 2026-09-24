@@ -12,6 +12,8 @@ mysql -u seu_usuario -p -e "CREATE DATABASE IF NOT EXISTS task_manager CHARACTER
 
 ## Rodando o projeto
 
+No Windows, rode `cd ~` no PowerShell antes do `composer install` se ainda não fez isso nesta sessão — o PowerShell às vezes abre numa pasta sem permissão de escrita para o seu usuário, e nesse caso o Composer falha ao instalar as dependências.
+
 ```bash
 composer install
 cp .env.example .env       # depois edite DB_USERNAME/DB_PASSWORD com suas credenciais
