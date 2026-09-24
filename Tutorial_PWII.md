@@ -14,6 +14,7 @@ Convenção de nomes: tudo que é criado neste tutorial (classes, variáveis, no
 - [4. Padrão DAO](#4-padrão-dao)
 - [5. Projeto Integrador](#5-projeto-integrador)
 - [6. Introdução a POO](#6-introdução-a-poo)
+- [Factories — gerando dados de teste realistas](#factories--gerando-dados-de-teste-realistas)
 - [7. POO Aplicada (herança, polimorfismo)](#7-poo-aplicada-herança-polimorfismo)
 - [8. Padrão MVC](#8-padrão-mvc)
 - [9. Implementação de Controller](#9-implementação-de-controller)
@@ -2476,6 +2477,262 @@ Um `Model` Eloquent **é** uma classe PHP — o Laravel adiciona persistência (
 
 ---
 
+## Factories — gerando dados de teste realistas
+
+**Objetivo:** entender por que criar `Tarefa` manualmente, uma a uma, não escala além de dois ou três exemplos — e como uma Model Factory do Laravel gera dados fake, porém realistas e sempre válidos, reaproveitáveis em tinker, seeders e testes automatizados.
+
+PHP 8.3 / Laravel 13.21. Continuação do "Gerenciador de Tarefas".
+
+### Pré-requisitos
+
+O Model `Tarefa` e a migration `tarefas` do Tópico 6, já migrados contra o banco `task_manager`.
+
+**✅ Checkpoint:** `php artisan migrate:status` mostra `..._create_tarefas_table` com status `Ran`.
+
+### Passo 1 — o problema: povoar o banco manualmente não escala
+
+No tinker, criar algumas tarefas de teste é só isso — chamadas repetidas a `Tarefa::create([...])`:
+
+```php
+Tarefa::create(['titulo' => 'Revisar PR', 'tipo' => 'urgente', 'prazo' => now()->addDay()]);
+Tarefa::create(['titulo' => 'Escrever relatório', 'tipo' => 'rotina', 'prazo' => now()->addWeek()]);
+Tarefa::create(['titulo' => 'Corrigir bug crítico', 'tipo' => 'urgente', 'concluida' => false]);
+Tarefa::create(['titulo' => 'Organizar reunião', 'tipo' => 'rotina', 'concluida' => true]);
+```
+
+Para 3 ou 4 exemplos isso ainda é tolerável. Mas peça "20 tarefas para testar a paginação" (Tópico 9) ou "uma tarefa nova para cada caso de teste" (a partir do Tópico 12) e o mesmo padrão vira dezenas de linhas quase idênticas, digitadas à mão, uma por uma. Além do tédio, títulos repetidos ou sempre curtos escondem bugs: um `titulo` que nunca varia de tamanho jamais revela, por exemplo, um bug de truncamento num `varchar` pequeno demais.
+
+É exatamente esse problema que uma **Model Factory** resolve: uma classe que sabe gerar, sob demanda, quantas instâncias de `Tarefa` você quiser, cada uma com dados **fake** — gerados pela biblioteca **Faker**, que produz valores com "cara" de dado real (nomes, frases, datas plausíveis) em vez dos mesmos 2 ou 3 valores fixos repetidos à mão.
+
+**✅ Checkpoint:** você já sentiu, na prática, o trabalho de criar mais de 3 tarefas manualmente no tinker.
+
+### Passo 2 — gere a factory
+
+```bash
+php artisan make:factory TarefaFactory --model=Tarefa --no-interaction
+```
+
+```
+INFO  Factory [database/factories/TarefaFactory.php] created successfully.
+```
+
+O comando cria `database/factories/TarefaFactory.php`, já ligado ao Model `Tarefa` (`--model=Tarefa`), estendendo `Illuminate\Database\Eloquent\Factories\Factory` com um método `definition(): array` vazio — é ali que você descreve, campo a campo, como é "uma `Tarefa` fake típica".
+
+**⚠️ Armadilha real — o Model precisa do trait `HasFactory`.** Mesmo com o arquivo da factory já criado, chamar `Tarefa::factory()` no tinker agora lança:
+
+```
+BadMethodCallException: Call to undefined method App\Models\Tarefa::factory().
+```
+
+`Tarefa::create(...)` (Passo 1) sempre funcionou sem nenhum preparo extra, porque `create()` é um método do próprio `Model` do Eloquent. Já o método estático `factory()` **não** vem de `Model` — ele é adicionado pelo trait `Illuminate\Database\Eloquent\Factories\HasFactory`, que é quem sabe, por convenção de nomes, associar `Tarefa` à classe `Database\Factories\TarefaFactory`. Sem o trait, o Model simplesmente não tem esse método. A correção:
+
+```php
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Tarefa extends Model
+{
+    use HasFactory;
+
+    protected $table = 'tarefas';
+    // ...
+}
+```
+
+Com o trait adicionado, `Tarefa::factory()` passa a devolver `Database\Factories\TarefaFactory` — confirmado rodando `get_class(Tarefa::factory())` no tinker.
+
+**✅ Checkpoint:** `Tarefa::factory()` no tinker não lança mais exceção nenhuma.
+
+### Passo 3 — defina `definition()`
+
+```php
+public function definition(): array
+{
+    return [
+        'titulo' => fake()->sentence(4),
+        'prazo' => fake()->dateTimeBetween('now', '+30 days'),
+        'concluida' => fake()->boolean(20),
+        'tipo' => fake()->randomElement(['urgente', 'rotina']),
+    ];
+}
+```
+
+Repare que `tipo` usa `fake()->randomElement(['urgente', 'rotina'])`, e não algo genérico como `fake()->word()`: `Tarefa::calcularPrioridade()` (Tópico 7) faz `match($this->tipo)` só com esses dois casos, caindo em `default => 0` para qualquer outro valor. Uma factory que gerasse `tipo` fora desse domínio produziria tarefas "válidas" no banco, mas silenciosamente quebradas do ponto de vista de negócio — o tipo de bug que só aparece muito depois, num relatório de prioridades zeradas sem explicação. `fake()->boolean(20)` gera `true` só 20% das vezes: a maioria das tarefas fake nasce pendente, o que é mais realista que 50/50.
+
+Em tinker, `make()` monta o objeto em memória sem tocar no banco, e `create()` salva de verdade:
+
+```php
+$t = Tarefa::factory()->make();
+// $t->id é null, e Tarefa::find($t->id) não encontra nada — nada foi salvo
+```
+
+```php
+$t = Tarefa::factory()->create();
+// $t->id já vem preenchido, e Tarefa::find($t->id) encontra a linha
+```
+
+**Verificado na implementação de referência:** `make()` devolveu um objeto com `titulo`, `prazo` e `tipo` preenchidos por Faker (ex.: `titulo: "Eos eum ducimus."`, `tipo: urgente`) e `id` nulo — confirmando que nada foi persistido. Em seguida, `create()` devolveu uma `Tarefa` já com `id` atribuído pelo banco, e uma nova consulta a `Tarefa::find($t->id)` encontrou a linha de verdade.
+
+**✅ Checkpoint:** `Tarefa::factory()->create()` no tinker devolve uma `Tarefa` com `id` preenchido, e ela aparece numa consulta `Tarefa::find($id)` logo em seguida.
+
+### Passo 4 — gere em lote e inspecione
+
+```php
+Tarefa::factory(20)->create();
+```
+
+Esse único comando salva 20 tarefas fake, cada uma com valores diferentes de `titulo`, `prazo` e `tipo`.
+
+**Verificado na implementação de referência:** antes do comando, `Tarefa::count()` valia 5; depois, 25 — uma diferença de exatamente 20, confirmando que o lote inteiro foi persistido numa única chamada, sem nenhum loop escrito à mão.
+
+**✅ Checkpoint:** `Tarefa::count()` antes e depois de `Tarefa::factory(20)->create()` difere em exatamente 20.
+
+### Passo 5 — states para os casos de borda do domínio
+
+Nem toda tarefa de teste é "genérica" — às vezes você precisa, especificamente, de uma tarefa urgente ou de uma já concluída. Para isso existem os **states**: variações nomeadas da factory, no mesmo padrão que `UserFactory::unverified()` já usa (`database/factories/UserFactory.php`) para gerar um usuário com `email_verified_at` nulo.
+
+```php
+/**
+ * Indica que a tarefa é urgente e tem prazo próximo (dentro de 2 dias),
+ * para bater com a regra de `Tarefa::isUrgente()`.
+ */
+public function urgente(): static
+{
+    return $this->state(fn (array $attributes) => [
+        'tipo' => 'urgente',
+        'prazo' => fake()->dateTimeBetween('now', '+2 days'),
+        'concluida' => false,
+    ]);
+}
+
+/**
+ * Indica que a tarefa já foi concluída.
+ */
+public function concluida(): static
+{
+    return $this->state(fn (array $attributes) => [
+        'concluida' => true,
+    ]);
+}
+```
+
+`$this->state(fn (array $attributes) => [...])` devolve uma nova instância da factory com esses campos sobrescrevendo o que `definition()` geraria — os outros campos continuam vindo do Faker normalmente. Os states são encadeáveis com `->create()`: `Tarefa::factory()->urgente()->create()`.
+
+**Verificado na implementação de referência:** `Tarefa::factory()->urgente()->create()` gerou uma tarefa com `tipo: urgente` e `prazo` dentro de 2 dias; chamando `isUrgente()` no objeto retornado, o resultado foi `true`, e `calcularPrioridade()` devolveu `10` — a nota máxima, exatamente a regra de negócio do Tópico 7 reagindo aos dados gerados pela factory. `Tarefa::factory()->concluida()->create()` gerou uma tarefa com `concluida: true`, como esperado.
+
+**✅ Checkpoint:** `Tarefa::factory()->urgente()->create()->isUrgente()` devolve `true` de verdade, não por coincidência do Faker.
+
+### Passo 6 — use no seeder
+
+```php
+public function run(): void
+{
+    // User::factory(10)->create();
+
+    User::factory()->create([
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+    ]);
+
+    Tarefa::factory(15)->create();
+    Tarefa::factory(3)->urgente()->create();
+    Tarefa::factory(2)->concluida()->create();
+}
+```
+
+```bash
+php artisan migrate:fresh --seed
+```
+
+`migrate:fresh` derruba e recria todas as tabelas do zero, e `--seed` roda `DatabaseSeeder` em seguida — o mesmo banco `task_manager`, agora populado inteiramente por código, sem passos manuais.
+
+**Verificado na implementação de referência:** rodando o comando contra o banco `task_manager` de verdade, as 5 migrations recriaram as tabelas e o seeder rodou sem erros. Consultando o banco depois: `Tarefa::count()` = 20 (15 + 3 + 2, como no seeder), `Tarefa::where('tipo', 'urgente')->count()` = 15 e `Tarefa::where('concluida', true)->count()` = 5 — a variação entre urgentes/rotina e concluída/pendente vindo da combinação dos states explícitos com a distribuição aleatória de `definition()`.
+
+**✅ Checkpoint:** depois de `php artisan migrate:fresh --seed`, `Tarefa::count()` no tinker mostra 20.
+
+### Passo 7 — use em um teste
+
+```bash
+php artisan make:test --phpunit TarefaFactoryTest --no-interaction
+```
+
+```php
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Tarefa;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class TarefaFactoryTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_tarefa_criada_pela_factory_aparece_na_listagem(): void
+    {
+        $tarefa = Tarefa::factory()->create(['titulo' => 'Tarefa de teste via factory']);
+
+        $response = $this->get('/tarefas');
+
+        $response->assertStatus(200);
+        $response->assertSee('Tarefa de teste via factory');
+    }
+
+    public function test_state_urgente_produz_tarefa_urgente_com_prioridade_maxima(): void
+    {
+        $tarefa = Tarefa::factory()->urgente()->create();
+
+        $this->assertTrue($tarefa->isUrgente());
+        $this->assertSame(10, $tarefa->calcularPrioridade());
+    }
+
+    public function test_state_concluida_nunca_e_urgente(): void
+    {
+        $tarefa = Tarefa::factory()->concluida()->create(['tipo' => 'urgente']);
+
+        $this->assertTrue($tarefa->concluida);
+        $this->assertFalse($tarefa->isUrgente());
+    }
+}
+```
+
+`use RefreshDatabase;` garante que cada teste roda contra um banco limpo (recriado a partir das migrations), e cada `Tarefa::factory()->create(...)` monta uma tarefa completa — com todo campo obrigatório preenchido por Faker — sobrescrevendo só o que importa para aquele teste específico. Nenhum teste precisou listar `titulo`, `prazo`, `concluida` e `tipo` na mão, e continuam funcionando mesmo que o Model ganhe novas colunas no futuro, desde que a factory seja atualizada uma única vez.
+
+```bash
+php artisan test --filter=TarefaFactoryTest
+```
+
+**Verificado na implementação de referência:** os 3 testes passaram, com 6 asserções, em cerca de 260 ms. Rodando a suíte inteira depois (`php artisan test`), o resultado foi 4 de 5 testes passando — a única falha é o `ExampleTest` pré-existente, que já esperava `/` devolver 200 antes desta mudança (na prática `/` redireciona para `/tarefas`, um achado anterior a esta seção e fora do escopo aqui).
+
+**✅ Checkpoint:** `php artisan test --filter=TarefaFactoryTest` mostra os 3 testes passando, sem nenhuma falha.
+
+### Resumo do que você construiu
+
+```
+✅ TarefaFactory (database/factories/TarefaFactory.php), gerando titulo/prazo/concluida/tipo sempre válidos
+✅ Trait HasFactory no Model Tarefa, sem o qual Tarefa::factory() não existe
+✅ make() (em memória) vs create() (persistido) demonstrados de verdade em tinker
+✅ Geração em lote (Tarefa::factory(20)->create()) substituindo loops manuais
+✅ States urgente() e concluida(), no mesmo padrão de UserFactory::unverified()
+✅ DatabaseSeeder populando Tarefa via factory, rodado de ponta a ponta com migrate:fresh --seed
+✅ TarefaFactoryTest usando a factory para preparar cenários, sem digitar campos obrigatórios na mão
+```
+
+### Exercícios
+
+1. **Fácil — state `atrasada()`**: adicione um novo state que fixa um `prazo` no passado e `concluida = false`, e confirme com `isAtrasada()`.
+2. **Médio — `ConfiguracaoFactory`**: crie uma factory para o Model `Configuracao` (Tópico 9, Singleton). Antes de escrever `definition()`, pense em quantas linhas dessa tabela sua aplicação realmente usa ao mesmo tempo.
+3. **Difícil — `sequence()`**: use `Tarefa::factory()->count(5)->sequence(fn ($seq) => ['titulo' => "Tarefa {$seq->index}"])` para gerar uma sequência numerada de títulos, e compare o resultado com simplesmente chamar `fake()` dentro de `definition()`.
+
+### Perguntas de fixação
+
+1. `Tarefa::create(...)` sempre funcionou sem nenhum preparo extra no Model. Por que `Tarefa::factory()` precisou do trait `HasFactory`, se os dois "criam uma tarefa"?
+2. Por que uma factory faz menos sentido para `Configuracao` (Tópico 9, Singleton) do que para `Tarefa`?
+3. Qual é a diferença prática entre usar `sequence()` e simplesmente deixar `fake()` gerar um valor diferente a cada chamada dentro de `definition()`?
+
+---
+
 ## 7. POO Aplicada (herança, polimorfismo)
 
 **Objetivo:** aplicar herança e polimorfismo a tipos diferentes de tarefa, e entender a alternativa prática dentro de um Model Eloquent único.
@@ -3560,7 +3817,7 @@ Trocar o binding faz `store`, `update` e `destroy` rodarem **sem tocar no banco 
 
 ### Exercícios
 
-1. **Teste com TarefaDAOEmMemoria**: escreva um teste Pest/PHPUnit usando o binding trocado.
+1. **Teste com TarefaDAOEmMemoria**: escreva um teste Pest/PHPUnit usando o binding trocado — use `Tarefa::factory()->create(...)` (seção "Factories", logo após o Tópico 6) para montar o cenário sem digitar cada campo obrigatório na mão.
 2. **Cache**: crie `TarefaDAOComCache` decorando `TarefaDAO`.
 3. **Métodos de consulta extra**: adicione `urgentes()` à interface e implemente nas duas classes.
 
@@ -4131,10 +4388,12 @@ task-manager/
 ├── database/migrations/
 │   ├── ..._create_tarefas_table.php       ← Tópico 6 (titulo, concluida; prazo/tipo já previstos para 7/8)
 │   └── ..._create_configuracoes_table.php ← Tópico 9 (singleton, já nasce com uma linha)
+├── database/factories/TarefaFactory.php   ← Factories (titulo/prazo/concluida/tipo sempre válidos; states urgente()/concluida())
+├── database/seeders/DatabaseSeeder.php    ← Factories (popula Tarefa via factory: 15 genéricas + 3 urgentes + 2 concluídas)
 ├── app/
 │   ├── helpers.php                      ← Tópico 11 (formatar_prazo, tempo_restante)
 │   ├── Models/
-│   │   ├── Tarefa.php                   ← Tópicos 6/7/8 (isUrgente, calcularPrioridade via match)
+│   │   ├── Tarefa.php                   ← Tópicos 6/7/8 (isUrgente, calcularPrioridade via match) + Factories (trait HasFactory)
 │   │   └── Configuracao.php             ← Tópico 9 (atual(), acessor do singleton)
 │   ├── DAO/
 │   │   ├── TarefaDAOInterface.php       ← Tópico 12
@@ -4150,20 +4409,21 @@ task-manager/
 │   │   ├── TarefaLista.php              ← Tópico 13
 │   │   └── TarefaForm.php               ← Tópico 13
 │   └── Providers/AppServiceProvider.php ← Tópicos 10/11/12 (View Composer, directive @urgente, bind do DAO)
-└── resources/views/
-    ├── layouts/app.blade.php            ← Tópico 10 (@yield, View Composer totalUrgentes) + Tópico 13 (@livewireStyles/@livewireScripts)
-    ├── components/tarefa-card.blade.php ← Tópico 10 (+ formatar_prazo/tempo_restante/@urgente do Tópico 11)
-    ├── livewire/
-    │   ├── tarefa-lista.blade.php       ← Tópico 13
-    │   └── tarefa-form.blade.php        ← Tópico 13
-    ├── tarefas/
-    │   ├── index.blade.php              ← Tópicos 10/13 (montagem final no Passo 7 do Tópico 13)
-    │   ├── create.blade.php             ← Tópicos 9/10 (campos prazo/tipo no Passo 5 do Tópico 10)
-    │   ├── show.blade.php               ← Tópico 9 (+ botão "concluir" do Invokable)
-    │   └── edit.blade.php               ← Tópico 9
-    └── configuracoes/
-        ├── show.blade.php               ← Tópico 9 (Singleton)
-        └── edit.blade.php               ← Tópico 9 (Singleton)
+├── resources/views/
+│   ├── layouts/app.blade.php            ← Tópico 10 (@yield, View Composer totalUrgentes) + Tópico 13 (@livewireStyles/@livewireScripts)
+│   ├── components/tarefa-card.blade.php ← Tópico 10 (+ formatar_prazo/tempo_restante/@urgente do Tópico 11)
+│   ├── livewire/
+│   │   ├── tarefa-lista.blade.php       ← Tópico 13
+│   │   └── tarefa-form.blade.php        ← Tópico 13
+│   ├── tarefas/
+│   │   ├── index.blade.php              ← Tópicos 10/13 (montagem final no Passo 7 do Tópico 13)
+│   │   ├── create.blade.php             ← Tópicos 9/10 (campos prazo/tipo no Passo 5 do Tópico 10)
+│   │   ├── show.blade.php               ← Tópico 9 (+ botão "concluir" do Invokable)
+│   │   └── edit.blade.php               ← Tópico 9
+│   └── configuracoes/
+│       ├── show.blade.php               ← Tópico 9 (Singleton)
+│       └── edit.blade.php               ← Tópico 9 (Singleton)
+└── tests/Feature/TarefaFactoryTest.php  ← Factories (cenários montados com Tarefa::factory(), sem digitar campos obrigatórios na mão)
 ```
 
 Um usuário navegando pelo `task-manager` de ponta a ponta: abre `/tarefas` (**Controller** `TarefaController@index`, que consulta o **Model** `Tarefa` diretamente — a exceção deliberada do Tópico 12, já que paginar por `Configuracao::atual()->tarefas_por_pagina` não é algo que `TarefaDAOInterface::todas()` sabe fazer — e devolve `tarefas/index.blade.php` — **View** — dentro do `layouts.app`, cujo View Composer já injetou `$totalUrgentes` sem o Controller pedir); cada tarefa aparece através do componente `<x-tarefa-card />`, que usa a directive `@urgente` e os helpers `formatar_prazo()`/`tempo_restante()`; na tela de detalhes, um botão aciona o `MarcarTarefaConcluidaController` (Invokable) para alternar a conclusão sem passar por `TarefaController`; em `/configuracoes`, o `ConfiguracaoController` (Singleton) mostra e edita a única linha de configuração do sistema, sem `id` nenhum na URL; na mesma página de tarefas, o componente Livewire `TarefaLista` permite marcar tarefas como concluídas com um clique, sem reload; `TarefaForm`, outro componente Livewire, cria tarefas reativamente, validando com `#[Validate(...)]`; em paralelo, `GET /api/tarefas` devolve a mesma informação em JSON, formatada por `TarefaResource`, através de um quarto tipo de Controller (`--api`), para consumo por outro programa — prontas para uma eventual apresentação via Postman, como pede o Tópico 15.

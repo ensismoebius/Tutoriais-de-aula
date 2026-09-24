@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Tarefa;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -21,5 +22,9 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        Tarefa::factory(15)->create();
+        Tarefa::factory(3)->urgente()->create();
+        Tarefa::factory(2)->concluida()->create();
     }
 }
