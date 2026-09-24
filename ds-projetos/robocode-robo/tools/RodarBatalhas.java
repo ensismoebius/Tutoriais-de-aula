@@ -13,7 +13,12 @@ import java.util.concurrent.CountDownLatch;
 
 public class RodarBatalhas {
     public static void main(String[] args) throws Exception {
-        String[] oponentes = {"sample.Corners", "sample.Crazy", "sample.Walls", "sample.RamFire"};
+        // Sem argumentos: os 4 oponentes fixos de sempre (comportamento original,
+        // usado pelos Topicos 15/16/17 do tutorial). Com um argumento: uma unica
+        // batalha contra a classe passada em args[0], mesmo formato de saida.
+        String[] oponentes = (args.length > 0)
+                ? new String[]{args[0]}
+                : new String[]{"sample.Corners", "sample.Crazy", "sample.Walls", "sample.RamFire"};
 
         RobocodeEngine engine = new RobocodeEngine(new File("/home/ensismoebius/robocode"));
         engine.setVisible(false);

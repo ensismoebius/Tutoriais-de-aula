@@ -7,20 +7,29 @@ Loaded net.sf.robocode.repository
 Loaded net.sf.robocode.host
 Loaded net.sf.robocode.sound
 Loading plugins from /home/ensismoebius/robocode/libs
-Initializing version check date.
 === MeuRobo vs sample.Corners (10 rounds) ===
-meurobo.MeuRobo 1.0*      score=   390 survival=     0 bulletDmg=   390 ramDmg=     0 1st= 0 2nd=10 3rd= 0
-sample.Corners            score=  1424 survival=   500 bulletDmg=   687 ramDmg=     0 1st=10 2nd= 0 3rd= 0
+meurobo.MeuRobo 1.0*      score=   884 survival=   250 bulletDmg=   522 ramDmg=     1 1st= 5 2nd= 5 3rd= 0
+sample.Corners            score=   832 survival=   250 bulletDmg=   453 ramDmg=     1 1st= 5 2nd= 5 3rd= 0
 
 === MeuRobo vs sample.Crazy (10 rounds) ===
-meurobo.MeuRobo 1.0*      score=   468 survival=   100 bulletDmg=   323 ramDmg=     8 1st= 2 2nd= 8 3rd= 0
-sample.Crazy              score=  1036 survival=   400 bulletDmg=   455 ramDmg=    20 1st= 8 2nd= 2 3rd= 0
+meurobo.MeuRobo 1.0*      score=  1466 survival=   500 bulletDmg=   712 ramDmg=    25 1st=10 2nd= 0 3rd= 0
+sample.Crazy              score=   358 survival=     0 bulletDmg=   340 ramDmg=    18 1st= 0 2nd=10 3rd= 0
 
 === MeuRobo vs sample.Walls (10 rounds) ===
-meurobo.MeuRobo 1.0*      score=   613 survival=    50 bulletDmg=   387 ramDmg=   146 1st= 1 2nd= 9 3rd= 0
-sample.Walls              score=  1422 survival=   450 bulletDmg=   728 ramDmg=    17 1st= 9 2nd= 1 3rd= 0
+meurobo.MeuRobo 1.0*      score=   887 survival=   200 bulletDmg=   535 ramDmg=    36 1st= 4 2nd= 6 3rd= 0
+sample.Walls              score=  1002 survival=   300 bulletDmg=   526 ramDmg=    13 1st= 6 2nd= 4 3rd= 0
 
 === MeuRobo vs sample.RamFire (10 rounds) ===
-meurobo.MeuRobo 1.0*      score=  1554 survival=   350 bulletDmg=   849 ramDmg=   142 1st= 7 2nd= 3 3rd= 0
-sample.RamFire            score=   619 survival=   150 bulletDmg=   294 ramDmg=    82 1st= 3 2nd= 7 3rd= 0
+meurobo.MeuRobo 1.0*      score=  1811 survival=   450 bulletDmg=   946 ramDmg=   133 1st= 9 2nd= 1 3rd= 0
+sample.RamFire            score=   246 survival=    50 bulletDmg=   112 ramDmg=    50 1st= 1 2nd= 9 3rd= 0
 
+Nota: esta e a saida real de UMA das 5 baterias completas rodadas nesta sessao contra a
+versao ATUAL de MeuRobo (mira preditiva + Wave Surfing, Topicos 15/16 do tutorial). As
+outras 4 baterias produziram placares diferentes (Corners variou 3-5/10, Crazy 6-10/10,
+Walls 0-6/10, RamFire 4-10/10 ao longo das 5 execucoes) -- inclusive contra Corners/Walls/
+RamFire, que tem estrategia deterministica; a causa mais provavel e que o Robocode sorteia
+a posicao inicial de cada robo a cada round. Uma unica bateria (como esta) NAO deve ser lida
+como "o" resultado do robo. Os numeros da versao historica (radar lock + mira direta +
+circling fixo, Topicos 13/14) e a faixa completa das 5 baterias desta versao ficam
+documentados no README.md, secoes "Resultados reais -- historico" e "Resultados reais --
+depois da mira preditiva e do Wave Surfing".

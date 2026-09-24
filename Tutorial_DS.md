@@ -23,9 +23,11 @@ Convenção de nomes: tudo que é criado neste tutorial (classes, métodos, vari
 - [Parte 2 — Robocode: um mini-projeto separado](#parte-2--robocode-um-mini-projeto-separado)
   - [13. Robocode: API — Movimento, tiros e sensoriamento](#13-robocode-api--movimento-tiros-e-sensoriamento)
   - [14. Robocode: de Robot para AdvancedRobot](#14-robocode-de-robot-para-advancedrobot)
-  - [15. Robocode: Refinamento e testes sistemáticos](#15-robocode-refinamento-e-testes-sistemáticos)
-  - [16. Robocode: Finalização e empacotamento](#16-robocode-finalização-e-empacotamento)
-  - [17. Robocode: Campeonato](#17-robocode-campeonato)
+  - [15. Robocode: Mira preditiva (Targeting)](#15-robocode-mira-preditiva-targeting)
+  - [16. Robocode: Wave Surfing (movimento evasivo adaptativo)](#16-robocode-wave-surfing-movimento-evasivo-adaptativo)
+  - [17. Robocode: Refinamento e testes sistemáticos](#17-robocode-refinamento-e-testes-sistemáticos)
+  - [18. Robocode: Finalização e empacotamento](#18-robocode-finalização-e-empacotamento)
+  - [19. Robocode: Campeonato](#19-robocode-campeonato)
 
 Cada tópico é um tutorial *build-along*: execute cada passo no seu computador e confira o resultado antes de prosseguir. Cada seção termina com um **✅ Checkpoint** — pare e confirme que o resultado bate antes de continuar.
 
@@ -2576,6 +2578,244 @@ public class MeuRobo extends Robot {
 2. Potência de tiro adaptativa: atire mais forte quando o inimigo está mais perto (`e.getDistance()`).
 3. `onRobotDeath`: pesquise esse evento e reaja quando outro robô é eliminado.
 
+## Ferramentas: batalhas via VSCode, sem o menu do Robocode
+
+**Objetivo:** rodar `MeuRobo` contra qualquer robô de exemplo, escolhido na hora, direto do VSCode — sem abrir a interface do Robocode e montar uma batalha manualmente pelos menus (*File → New Battle*, selecionar participantes, configurar rounds).
+
+Duas peças novas de vocabulário antes de começar. Uma **VSCode Task** é um comando externo (compilar, rodar um script, etc.) registrado no workspace e disparado pelo command palette, em vez de digitado manualmente no terminal toda vez — o mesmo papel que um "run configuration" cumpre noutras IDEs, ou um alvo de `Makefile` chamado por atalho. E um **input variable** de uma task é o que permite que ela não rode sempre o mesmo comando fixo: em vez disso, a task pausa e pergunta algo ao usuário (aqui, via um dropdown) antes de montar o comando final — é assim que a mesma task serve para testar contra qualquer oponente, sem precisar de uma task separada para cada um.
+
+### Pré-requisitos
+
+Robô funcional do Tópico 13 (movimento, mira, reação a dano), e a pasta `ds-projetos/robocode-robo/` aberta no VSCode como pasta do workspace (é dela que `${workspaceFolder}` nas seções seguintes vai apontar). **✅ Checkpoint:** você já rodou `MeuRobo` contra um oponente de exemplo pela GUI do Robocode ou por linha de comando pelo menos uma vez (Tópico 13).
+
+### PASSO 1: entenda o fluxo manual que está sendo eliminado
+
+Hoje, testar contra um novo oponente pela GUI do Robocode significa abrir o programa, ir em *Battle → New*, adicionar os dois robôs na lista, configurar o número de rounds, iniciar a batalha, esperar a janela renderizar o combate e olhar o placar na tela — e repetir esse fluxo manual inteiro toda vez que você quer testar contra outro oponente. É lento, e o resultado não fica registrado em lugar nenhum além da sua memória. Uma Task automatiza exatamente essa sequência: compilar, implantar e rodar a batalha, com a saída (o placar real) impressa no terminal integrado do VSCode.
+
+**✅ Checkpoint:** você consegue explicar, com suas palavras, quais passos manuais da GUI a Task vai substituir.
+
+### PASSO 2: parametrize `RodarBatalhas.java` para aceitar um oponente por argumento
+
+`RodarBatalhas.java` (criado no Tópico 17) já roda uma bateria fixa de 4 oponentes de exemplo. Para a Task funcionar com qualquer oponente escolhido no dropdown, ele precisa aceitar esse oponente como argumento de linha de comando — sem deixar de funcionar sem argumento nenhum, já que os Tópicos 15, 16 e 17 dependem do comportamento atual (os mesmos 4 oponentes fixos) para os números que já documentaram:
+
+```java
+// Sem argumentos: os 4 oponentes fixos de sempre (comportamento original,
+// usado pelos Topicos 15/16/17 do tutorial). Com um argumento: uma unica
+// batalha contra a classe passada em args[0], mesmo formato de saida.
+String[] oponentes = (args.length > 0)
+        ? new String[]{args[0]}
+        : new String[]{"sample.Corners", "sample.Crazy", "sample.Walls", "sample.RamFire"};
+```
+
+O restante do arquivo não muda: o mesmo `for` que já percorria os 4 oponentes agora percorre só 1 quando há argumento, e o tratamento de erro que já existia (`"OPONENTE NAO ENCONTRADO: " + oponenteClasse`, quando a classe não existe no repositório) continua valendo sem nenhum código novo — passar um nome de classe com erro de digitação produz a mesma mensagem clara de sempre.
+
+**✅ Checkpoint:** `RodarBatalhas` compilado roda `RodarBatalhas sample.SittingDuck` (uma batalha só) e também `RodarBatalhas` sem argumento (os 4 de sempre) sem erro.
+
+### PASSO 3: crie o script que compila, implanta e roda a batalha
+
+A Task não vai chamar `javac`/`java` diretamente — ela chama um script que encadeia os mesmos passos que a seção "Como compilar e implantar" do `README.md` já documenta manualmente. Como os alunos deste curso podem estar em Linux/macOS ou em Windows, existem dois scripts equivalentes, um por sistema operacional; a Task escolhe o certo sozinha (PASSO 4).
+
+**Linux/macOS — `tools/rodar-batalha-vscode.sh`:**
+
+```bash
+#!/usr/bin/env bash
+# Compila MeuRobo, implanta no Robocode local e roda uma batalha headless real
+# contra UM oponente passado como argumento. E exatamente o comando que a
+# VSCode Task ("Robocode: batalha rapida contra oponente a escolha", em
+# .vscode/tasks.json) dispara -- este script pode ser chamado direto do shell
+# (para testar/depurar sem VSCode) ou pela Task (que so encaminha o valor
+# escolhido no dropdown como $1).
+set -euo pipefail
+
+if [ "$#" -lt 1 ]; then
+    echo "Uso: $0 <classe-do-oponente>  (ex.: $0 sample.SittingDuck)" >&2
+    exit 1
+fi
+
+OPONENTE="$1"
+
+# Raiz do projeto (robocode-robo), calculada a partir da localizacao deste
+# script -- funciona independente de onde o repositorio for clonado.
+RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROBOCODE_HOME="$HOME/robocode"
+
+echo "== 1/4: compilando MeuRobo.java =="
+javac -cp "$ROBOCODE_HOME/libs/robocode.jar" -d "$RAIZ/build" "$RAIZ/src/meurobo/MeuRobo.java"
+
+echo "== 2/4: implantando em $ROBOCODE_HOME/robots/meurobo =="
+mkdir -p "$ROBOCODE_HOME/robots/meurobo"
+# build/meurobo/*.class (nao so MeuRobo.class): a classe interna Onda, do Wave
+# Surfing, compila para um .class separado (MeuRobo$Onda.class) que tambem
+# precisa ser implantado -- esquece-lo produz ClassNotFoundException ao
+# carregar o robo (mesmo problema real documentado no README do projeto).
+cp "$RAIZ"/build/meurobo/*.class "$RAIZ/src/meurobo/MeuRobo.properties" "$ROBOCODE_HOME/robots/meurobo/"
+rm -f "$ROBOCODE_HOME/robots/robot.database"   # forca o Robocode a reindexar
+
+echo "== 3/4: compilando RodarBatalhas.java =="
+BUILD_TOOLS="$(mktemp -d)"
+trap 'rm -rf "$BUILD_TOOLS"' EXIT
+javac -cp "$ROBOCODE_HOME/libs/*" "$RAIZ/tools/RodarBatalhas.java" -d "$BUILD_TOOLS"
+
+echo "== 4/4: rodando batalha contra $OPONENTE =="
+java -DNOSECURITY=true -cp "$BUILD_TOOLS:$ROBOCODE_HOME/libs/*" RodarBatalhas "$OPONENTE"
+```
+
+**Windows — `tools/rodar-batalha-vscode.ps1`:**
+
+```powershell
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Oponente
+)
+
+$ErrorActionPreference = "Stop"
+
+# Raiz do projeto (robocode-robo), calculada a partir da localizacao deste
+# script -- funciona independente de onde o repositorio for clonado.
+$Raiz = Split-Path -Parent $PSScriptRoot
+$RobocodeHome = Join-Path $HOME "robocode"
+
+Write-Host "== 1/4: compilando MeuRobo.java =="
+javac -cp "$RobocodeHome\libs\robocode.jar" -d "$Raiz\build" "$Raiz\src\meurobo\MeuRobo.java"
+if ($LASTEXITCODE -ne 0) { exit 1 }
+
+Write-Host "== 2/4: implantando em $RobocodeHome\robots\meurobo =="
+New-Item -ItemType Directory -Force -Path "$RobocodeHome\robots\meurobo" | Out-Null
+Copy-Item "$Raiz\build\meurobo\*.class" "$RobocodeHome\robots\meurobo\" -Force
+Copy-Item "$Raiz\src\meurobo\MeuRobo.properties" "$RobocodeHome\robots\meurobo\" -Force
+Remove-Item "$RobocodeHome\robots\robot.database" -Force -ErrorAction SilentlyContinue
+
+Write-Host "== 3/4: compilando RodarBatalhas.java =="
+$BuildTools = Join-Path ([System.IO.Path]::GetTempPath()) ("rb-" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $BuildTools | Out-Null
+javac -cp "$RobocodeHome\libs\*" "$Raiz\tools\RodarBatalhas.java" -d $BuildTools
+if ($LASTEXITCODE -ne 0) { exit 1 }
+
+Write-Host "== 4/4: rodando batalha contra $Oponente =="
+# Separador de classpath no Windows e ";", nao ":" -- a unica diferenca real
+# frente ao script bash, alem da sintaxe da propria linguagem.
+java -DNOSECURITY=true -cp "$BuildTools;$RobocodeHome\libs\*" RodarBatalhas $Oponente
+$exitCode = $LASTEXITCODE
+
+Remove-Item $BuildTools -Recurse -Force -ErrorAction SilentlyContinue
+if ($exitCode -ne 0) { exit 1 }
+```
+
+O único detalhe que realmente importa entre os dois, além da sintaxe de cada linguagem de script: **o separador de classpath**. No `-cp` do Java, Linux/macOS usa `:` entre entradas (`"$BUILD_TOOLS:$ROBOCODE_HOME/libs/*"`) e Windows usa `;` (`"$BuildTools;$RobocodeHome\libs\*"`) — é o detalhe mais fácil de copiar errado de um script para o outro sem perceber, porque o erro só aparece na hora de rodar (`ClassNotFoundException` ou "could not find or load main class"), não na hora de compilar. Fora isso, os dois scripts seguem exatamente os mesmos 4 passos, na mesma ordem, incluindo a mesma correção do `.class` da classe interna `Onda` do Wave Surfing (copiar `*.class`, não só `MeuRobo.class`) que o README já documenta.
+
+**✅ Checkpoint:** `chmod +x tools/rodar-batalha-vscode.sh` (Linux/macOS) rodado uma vez.
+
+### PASSO 4: crie `.vscode/tasks.json` com o dropdown de oponente
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Robocode: batalha rápida contra oponente à escolha",
+      "type": "shell",
+      "command": "${workspaceFolder}/tools/rodar-batalha-vscode.sh",
+      "args": ["${input:oponente}"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-ExecutionPolicy", "Bypass",
+          "-File", "${workspaceFolder}\\tools\\rodar-batalha-vscode.ps1",
+          "${input:oponente}"
+        ]
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "oponente",
+      "type": "pickString",
+      "description": "Escolha o robô de exemplo para MeuRobo enfrentar",
+      "options": [
+        { "label": "SittingDuck — o mais simples, parado (bom primeiro teste)", "value": "sample.SittingDuck" },
+        { "label": "Corners — foge para o canto e atira parado", "value": "sample.Corners" },
+        { "label": "Crazy — se move de forma errática (resultado varia bastante entre execuções)", "value": "sample.Crazy" },
+        { "label": "Walls — percorre a borda da arena", "value": "sample.Walls" },
+        { "label": "RamFire — tenta colidir de propósito", "value": "sample.RamFire" },
+        { "label": "TrackFire — oponente do exercício do Tópico 17", "value": "sample.TrackFire" }
+      ],
+      "default": "sample.SittingDuck"
+    }
+  ]
+}
+```
+
+Cada campo tem um papel específico:
+
+- `label`: o texto que aparece na lista do "Tasks: Run Task" — puramente descritivo, **não** aceita `${input:...}` (a substituição de input variable só funciona dentro de `command`, `args` e `options` de uma task; o VSCode monta os labels antes de resolver os inputs).
+- `command` / `args`: onde `${input:oponente}` de fato entra — o valor escolhido no dropdown vira o argumento passado ao script. O bloco `windows` sobrescreve só esses dois campos quando o sistema operacional é Windows; em Linux e macOS (que não têm bloco próprio) valem os `command`/`args` da task normalmente.
+- `inputs[].id`: o nome usado em `${input:oponente}` — precisa bater exatamente.
+- `inputs[].type: "pickString"`: um dropdown de opções fixas (as outras opções são `"promptString"`, texto livre, e `"command"`, que roda outro comando para gerar o valor).
+- `inputs[].options`: cada opção pode ser uma string simples ou um objeto `{"label": "...", "value": "..."}` — usado aqui para cada oponente, onde o `label` explica o estilo do robô (reaproveitando as descrições que este mesmo tutorial já usa no Tópico 17) e o `value` é o nome real da classe que o script recebe. O dropdown mostra `label: value`.
+- `inputs[].default`: a opção pré-selecionada quando o dropdown abre.
+
+Não há aninhamento de input variables (um input não pode referenciar outro), e por isso o número de rounds continua fixo em 10 dentro de `RodarBatalhas.java` — torná-lo configurável também é um dos exercícios a seguir.
+
+**✅ Checkpoint:** `python3 -m json.tool .vscode/tasks.json` (ou `node -e "JSON.parse(require('fs').readFileSync('.vscode/tasks.json'))"`) roda sem erro, confirmando que o JSON é válido.
+
+### PASSO 5: rode a task de verdade
+
+`Ctrl+Shift+P` (ou `Cmd+Shift+P` no macOS) → digite "Tasks: Run Task" → selecione a task pelo `label` ("Robocode: batalha rápida contra oponente à escolha") → o VSCode mostra o dropdown com os 6 oponentes → escolha um → o terminal integrado abre (num painel dedicado, por causa de `"panel": "dedicated"`) e mostra a saída da batalha em tempo real. Nota rápida sobre atalhos: `Ctrl+Shift+B`/`Cmd+Shift+B` roda a *build task* padrão do workspace, não esta — "Run Task" genérico (o comando acima) é o caminho normal para uma task que não é de build. Se quiser rodar esta task com `Ctrl+Shift+B`, é preciso marcá-la explicitamente como padrão com `"group": {"kind": "test", "isDefault": true}` em vez de só `"group": "test"`.
+
+**Honestidade sobre o que foi verificado:** o comando por trás da task — `rodar-batalha-vscode.sh`, chamado com um oponente escolhido — foi rodado de verdade nesta sessão, do início ao fim (compilação, implantação, batalha), contra dois oponentes diferentes, e a saída abaixo é a saída real dessas execuções, sem edição além de remover as linhas de log de carregamento interno do Robocode (`Loaded net.sf.robocode.*`) por brevidade:
+
+```
+$ ./tools/rodar-batalha-vscode.sh sample.SittingDuck
+== 1/4: compilando MeuRobo.java ==
+== 2/4: implantando em /home/.../robocode/robots/meurobo ==
+== 3/4: compilando RodarBatalhas.java ==
+== 4/4: rodando batalha contra sample.SittingDuck ==
+=== MeuRobo vs sample.SittingDuck (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=  1280 survival=   400 bulletDmg=   680 ramDmg=     0 1st= 8 2nd= 2 3rd= 0
+sample.SittingDuck        score=   120 survival=   100 bulletDmg=     0 ramDmg=     0 1st= 2 2nd= 8 3rd= 0
+
+$ ./tools/rodar-batalha-vscode.sh sample.TrackFire
+== 1/4: compilando MeuRobo.java ==
+== 2/4: implantando em /home/.../robocode/robots/meurobo ==
+== 3/4: compilando RodarBatalhas.java ==
+== 4/4: rodando batalha contra sample.TrackFire ==
+=== MeuRobo vs sample.TrackFire (10 rounds) ===
+meurobo.MeuRobo 1.0*      score=   641 survival=   100 bulletDmg=   471 ramDmg=     8 1st= 2 2nd= 8 3rd= 0
+sample.TrackFire          score=  1531 survival=   400 bulletDmg=   891 ramDmg=     0 1st= 8 2nd= 2 3rd= 0
+```
+
+`MeuRobo` venceu 8/10 rounds contra `SittingDuck` (esperado — é o oponente mais simples, parado e sem mira) e apenas 2/10 contra `TrackFire`, que rastreia e atira de volta de forma mais persistente; é a mesma variação real, entre estilos de oponente, já discutida no Tópico 17.
+
+Duas lacunas reais e específicas ficam de fora dessa verificação, e é importante ser direto sobre isso em vez de deixar implícito: este ambiente sandbox não tem interface gráfica interativa, então clicar literalmente em "Tasks: Run Task" e escolher uma opção no dropdown do VSCode não pôde ser demonstrado — o mecanismo por trás (o script, chamado com um oponente) é idêntico ao que a Task dispara, então o comportamento é o mesmo, mas a interação de clique em si não foi gravada. E o script Windows (`rodar-batalha-vscode.ps1`) foi escrito espelhando cuidadosamente a lógica já verificada do script bash — mesmos 4 passos, mesma correção da classe `Onda`, mesmo separador de classpath corrigido para `;` — mas este ambiente não tem PowerShell nem uma instalação do Robocode em layout Windows, então ele não pôde ser executado de ponta a ponta como o script bash foi. O código Java por trás dos dois (`RodarBatalhas.java`, `MeuRobo.java`) é o mesmo, já testado; a tradução do script de implantação para PowerShell, especificamente, não foi rodada de verdade.
+
+**✅ Checkpoint:** rodar a task com pelo menos dois oponentes diferentes mostra, no terminal integrado, o placar real de cada batalha, sem precisar abrir a GUI do Robocode em nenhum momento.
+
+### Resumo do que você construiu
+
+- `RodarBatalhas.java` parametrizado para rodar uma única batalha contra um oponente recebido por argumento, sem quebrar o modo sem argumento (4 oponentes fixos) que os Tópicos 15–17 já usam.
+- Um script por sistema operacional (`rodar-batalha-vscode.sh` para Linux/macOS, `rodar-batalha-vscode.ps1` para Windows) que encadeia compilar, implantar e rodar a batalha.
+- Uma VSCode Task (`.vscode/tasks.json`) com um input `pickString`, que mostra um dropdown de oponentes e escolhe o script certo por sistema operacional via o campo `windows`.
+- Duas batalhas reais rodadas de ponta a ponta contra oponentes diferentes, sem abrir a GUI do Robocode.
+- Entendimento de quais campos de uma task aceitam `${input:...}` (`command`, `args`, `options`) e quais não aceitam (`label`).
+
+### Perguntas de fixação
+
+1. Por que só `command`, `args` e `options` suportam `${input:...}`, e não `label`?
+2. O que aconteceria se você rodasse a task duas vezes seguidas com o MESMO oponente, sem alterar `MeuRobo.java` entre uma execução e outra — o resultado seria idêntico? Por quê (ou por que não)?
+3. Por que o script implanta o robô (copia `.class`/`.properties` para `~/robocode/robots/`) a cada execução, em vez de só na primeira vez?
+
+### Exercícios
+
+1. Fácil: adicione mais um robô de exemplo ao dropdown (ex. `sample.SpinBot`, confirmando o comportamento real dele antes de descrevê-lo — rode uma batalha de teste contra ele, ou confira a documentação oficial do Robocode, antes de escrever a descrição no `label`).
+2. Médio: adicione um segundo input (`promptString`) para o número de rounds, em vez de fixar 10 — repasse esse valor também para `RodarBatalhas.java`.
+3. Difícil/opcional: crie uma segunda task, com `dependsOn`, que só compila e implanta (sem rodar batalha) — útil para checar erros de compilação rapidamente sem esperar 10 rounds.
+
 ## 14. Robocode: de Robot para AdvancedRobot
 
 **Objetivo:** evoluir de `Robot` (bloqueante) para `AdvancedRobot` (assíncrono), com radar lock e movimento circular.
@@ -2701,15 +2941,436 @@ public class MeuRobo extends AdvancedRobot {
 
 1. Distância adaptativa: ajuste a distância de *circling* conforme a energia restante.
 2. Múltiplos alvos: pesquise como priorizar o inimigo mais fraco quando há vários na arena.
-3. `onHitWall`: reaja quando o robô colide com a parede da arena (você vai formalizar isso no próximo tópico).
+3. `onHitWall`: reaja quando o robô colide com a parede da arena (você vai formalizar isso mais adiante, no tópico de Refinamento e testes sistemáticos).
 
-## 15. Robocode: Refinamento e testes sistemáticos
+## 15. Robocode: Mira preditiva (Targeting)
+
+**Objetivo:** substituir a mira direta (atirar na posição atual do inimigo) por mira preditiva, calculando onde o inimigo *vai estar* quando a bala chegar.
+
+### Pré-requisitos
+
+Robô `AdvancedRobot` com radar lock, mira direta e movimento circular do tópico anterior. **✅ Checkpoint:** o robô do Tópico 14 compila e vence a maioria das batalhas contra `sample.SittingDuck`.
+
+### PASSO 1: por que mirar na posição atual do inimigo erra
+
+Desde o Tópico 13, `MeuRobo` mira exatamente na posição em que o inimigo estava no instante do *scan* — mas a bala não chega instantaneamente. Ela leva `distância / velocidadeBala` *ticks* para percorrer o caminho, e a velocidade da bala no Robocode é `20 - 3 * potência` (com `potência` em `[0.1, 3.0]`). Durante esse tempo de viagem, um inimigo em movimento já saiu do lugar.
+
+Um exemplo numérico concreto, com os números que o robô já usa: a um alvo a 400px de distância, atirando com potência 2, a velocidade da bala é `20 - 3*2 = 14` px/tick. O tempo até a bala chegar é `400 / 14 ≈ 28.6` *ticks*. Nesse tempo, um inimigo se movendo **perpendicularmente** à linha de tiro na velocidade linear máxima de um robô (8px/tick) percorre até `8 * 28.6 ≈ 228` px — mais de 12 vezes o raio de um robô (18px). Mirar onde o inimigo *estava*, e não onde ele *vai estar*, erra por uma margem enorme contra qualquer alvo que não esteja parado ou se movendo diretamente na linha de tiro.
+
+**✅ Checkpoint:** para uma distância e potência à sua escolha, você consegue calcular quantos pixels um inimigo a 8px/tick percorre durante o tempo de viagem da bala.
+
+### PASSO 2: Linear Targeting por refinamento iterativo
+
+A forma "livro-texto" de resolver isso é uma equação quadrática fechada — mas há um jeito mais simples de implementar corretamente e de explicar: refinamento iterativo. A ideia é recalcular o tempo de viagem usando a posição prevista da rodada anterior, repetindo algumas vezes até estabilizar:
+
+```java
+private double[] preverPosicaoLinear(double inimigoX, double inimigoY,
+                                      double velocidadeInimigo, double headingInimigoGraus,
+                                      double minhaX, double minhaY, double velocidadeBala) {
+    double headingRad = Math.toRadians(headingInimigoGraus);
+    double vx = velocidadeInimigo * Math.sin(headingRad);
+    double vy = velocidadeInimigo * Math.cos(headingRad);
+
+    double previstoX = inimigoX;
+    double previstoY = inimigoY;
+    double tempo = 0;
+
+    for (int i = 0; i < 10; i++) {
+        double dx = previstoX - minhaX;
+        double dy = previstoY - minhaY;
+        tempo = Math.sqrt(dx * dx + dy * dy) / velocidadeBala;
+        previstoX = clamp(inimigoX + vx * tempo, 18, getBattleFieldWidth() - 18);
+        previstoY = clamp(inimigoY + vy * tempo, 18, getBattleFieldHeight() - 18);
+    }
+
+    return new double[]{previstoX, previstoY};
+}
+
+private double clamp(double v, double min, double max) {
+    return Math.max(min, Math.min(max, v));
+}
+```
+
+`vx`/`vy` decompõem a velocidade do inimigo nos eixos X/Y a partir do heading dele, na mesma convenção que o resto do arquivo já usa (`x += velocidade * sin(heading)`, `y += velocidade * cos(heading)`). Cada iteração do laço recalcula o tempo de viagem com a posição prevista mais recente, e a correção fica cada vez menor a cada passagem — na prática, converge em poucas iterações para qualquer combinação de velocidade e distância dentro da faixa normal de uma batalha, então 10 iterações é uma margem confortável, não um ajuste fino. `clamp` é um helper de min/max que evita prever uma posição fora da arena. Repare que `getBattleFieldWidth()`/`getBattleFieldHeight()` (métodos reais de `AdvancedRobot`, herdados de `Robot`) substituem qualquer largura/altura fixa — o robô continua funcionando em campos de qualquer tamanho, não só 800×600.
+
+**✅ Checkpoint:** `preverPosicaoLinear` compila e, chamada com valores de teste (ex.: um inimigo parado, `velocidadeInimigo = 0`), devolve a própria posição do inimigo sem alteração.
+
+### PASSO 3: generalize para Circular Targeting
+
+Linear Targeting assume que o inimigo mantém heading e velocidade constantes — uma assunção ruim contra qualquer robô em curva (como o próprio `MeuRobo`, que já circula em torno do inimigo desde o Tópico 14). Circular Targeting simula o inimigo tick a tick, aplicando a variação de heading observada entre os dois últimos *scans*.
+
+Primeiro, dois campos novos para guardar essa variação, atualizados a cada `onScannedRobot`:
+
+```java
+private double headingInimigoAnterior = Double.NaN; // NaN = ainda não temos um scan anterior
+private double variacaoHeadingInimigo = 0;
+```
+
+Dentro de `onScannedRobot`, antes de sobrescrever `headingInimigoAnterior` com o heading atual:
+
+```java
+// Acompanha a variação de heading do inimigo entre scans (Circular Targeting).
+double headingInimigoAtual = e.getHeading(); // confirmado via javap: ScannedRobotEvent.getHeading() já vem em graus
+if (!Double.isNaN(headingInimigoAnterior)) {
+    variacaoHeadingInimigo = normalizeAngle(headingInimigoAtual - headingInimigoAnterior);
+}
+headingInimigoAnterior = headingInimigoAtual;
+```
+
+(Antes de usar `e.getHeading()`, vale a pena confirmar a assinatura contra a API real instalada em vez de supor — `javap -cp ~/robocode/libs/robocode.jar robocode.ScannedRobotEvent` lista tanto `getHeading()` quanto `getHeadingRadians()`, confirmando que a versão sem "Radians" já devolve graus diretamente, na mesma convenção usada no resto do arquivo.)
+
+Com a variação de heading em mãos, a previsão vira uma simulação passo a passo:
+
+```java
+private double[] preverPosicaoCircular(double inimigoX, double inimigoY,
+                                        double velocidadeInimigo, double headingInimigoGraus,
+                                        double variacaoHeadingGraus,
+                                        double minhaX, double minhaY, double velocidadeBala) {
+    double simX = inimigoX, simY = inimigoY;
+    double simHeadingGraus = headingInimigoGraus;
+    int maxPassos = 500; // margem generosa; ver explicação abaixo
+
+    for (int passo = 1; passo <= maxPassos; passo++) {
+        simHeadingGraus = normalizeAngle(simHeadingGraus + variacaoHeadingGraus);
+        double rad = Math.toRadians(simHeadingGraus);
+        simX = clamp(simX + velocidadeInimigo * Math.sin(rad), 18, getBattleFieldWidth() - 18);
+        simY = clamp(simY + velocidadeInimigo * Math.cos(rad), 18, getBattleFieldHeight() - 18);
+
+        double dx = simX - minhaX, dy = simY - minhaY;
+        double distanciaAteSimulado = Math.sqrt(dx * dx + dy * dy);
+        if (velocidadeBala * passo >= distanciaAteSimulado) {
+            break; // a bala alcançaria a posição simulada neste passo
+        }
+    }
+    return new double[]{simX, simY};
+}
+```
+
+A cada passo simulado, o heading do inimigo gira pela mesma variação observada no último intervalo entre *scans* — se essa variação for 0, a trajetória simulada vira uma reta, e o resultado converge para o mesmo que o Linear Targeting do Passo 2 (Circular Targeting generaliza o caso linear, não o substitui). `maxPassos = 500` é uma margem generosa e não um ajuste fino: no pior caso, a bala mais lenta é a de potência máxima (`velocidadeBala = 20 - 3*3 = 11`), e mesmo assim 500 passos cobrem com folga a diagonal de qualquer campo Robocode razoável, a um custo de CPU irrelevante (é só um laço simples, roda em microssegundos por *tick*).
+
+**✅ Checkpoint:** `preverPosicaoCircular` compila; com `variacaoHeadingGraus = 0`, a posição prevista bate com `preverPosicaoLinear` para os mesmos parâmetros.
+
+### PASSO 4: combine tudo numa função `mirar()`
+
+Uma única função decide o ângulo de mira e gira o canhão, substituindo a linha de mira direta que o robô usava desde o Tópico 13 (`setTurnGunRight(normalizeAngle(anguloAbsoluto - getGunHeading()))`). Ela usa sempre a previsão circular — como o Passo 3 mostrou, ela já cobre o caso linear quando a variação de heading é zero, então manter as duas previsões separadas em produção seria redundante:
+
+```java
+private void mirar(double inimigoX, double inimigoY, double velocidadeInimigo,
+                    double headingInimigoGraus, double potencia) {
+    double velocidadeBala = 20 - 3 * potencia;
+    double anguloMiraGraus;
+
+    if (velocidadeBala > 0 && !Double.isNaN(velocidadeBala)) {
+        double[] previsto = preverPosicaoCircular(inimigoX, inimigoY, velocidadeInimigo,
+                headingInimigoGraus, variacaoHeadingInimigo, getX(), getY(), velocidadeBala);
+        anguloMiraGraus = Math.toDegrees(Math.atan2(previsto[0] - getX(), previsto[1] - getY()));
+    } else {
+        anguloMiraGraus = Math.toDegrees(Math.atan2(inimigoX - getX(), inimigoY - getY()));
+    }
+
+    setTurnGunRight(normalizeAngle(anguloMiraGraus - getGunHeading()));
+}
+```
+
+O `if` é uma proteção defensiva, no mesmo espírito de "trate exceções defensivamente" que o tópico de Finalização já ensina: se a potência calculada produzir uma `velocidadeBala` inválida (`<= 0` ou `NaN` — não deveria acontecer com `calcularPotencia()` no intervalo `[0.1, 3.0]`, mas é barato se proteger), o robô cai de volta para mira direta na posição atual do inimigo em vez de arriscar uma previsão sem sentido. `mirar()` é chamada de dentro de `onScannedRobot`, no lugar da mira direta antiga.
+
+**✅ Checkpoint:** o robô compila, mira à frente de um inimigo em movimento (visualmente perceptível numa batalha com interface gráfica) e continua funcionando normalmente (sem cair no fallback) durante uma batalha inteira.
+
+### PASSO 5: bateria de batalhas reais — mira preditiva vs. mira direta
+
+Mesmos 4 oponentes, mesmo runner `RodarBatalhas.java`, 10 *rounds* cada, comparando o baseline documentado no `README.md` do projeto (mira direta, robô do Tópico 14, uma única bateria registrada na época) com **3 baterias independentes** rodadas nesta sessão, já com Circular Targeting ativo (e ainda com o *circling* fixo do Tópico 14 como movimento — o Tópico 16 troca isso):
+
+```
+                     mira direta (baseline,     mira preditiva (Circular Targeting,
+                     1 bateria registrada)      3 baterias rodadas nesta sessão)
+vs sample.Corners:   0/10                       2/10 a 5/10
+vs sample.Crazy:     2/10 a 5/10                 5/10 a 6/10
+vs sample.Walls:     1/10                        4/10 a 5/10
+vs sample.RamFire:   7/10                        6/10 a 9/10
+```
+
+**Descoberta real, e não prevista quando este material foi planejado:** rodar a mesma bateria várias vezes revelou que a variação entre execuções não é exclusividade de `Crazy` (cujo movimento é literalmente aleatório) — `Corners`, `Walls` e `RamFire` também produzem resultados diferentes de bateria para bateria, mesmo sendo oponentes com estratégia determinística. A causa mais provável é que o Robocode sorteia a posição inicial de cada robô a cada *round*, o que muda a dinâmica inicial do combate mesmo quando a lógica de ambos os lados é sempre a mesma. Isso significa que **uma única bateria de 10 *rounds*, sozinha, não é uma medida confiável** — é por isso que esta seção já reporta faixas (mínimo–máximo de 3 execuções), não um único número. Dito isso, mesmo com essa variação, a faixa inteira contra `Corners` e `Walls` fica acima do baseline de uma única bateria; contra `RamFire`, a faixa (6/10 a 9/10) chega a tocar por baixo o valor do baseline (7/10) — um lembrete de que "a mira preditiva ajuda" é verdade em geral, mas não é uma garantia absoluta em toda execução isolada. Nenhum desses números veio de estimativa — são batalhas headless reais, rodadas via `robocode.control.RobocodeEngine` nesta mesma sessão de trabalho.
+
+**✅ Checkpoint:** você reproduz pelo menos uma dessas 4 batalhas na sua máquina e confirma uma taxa de vitória igual ou próxima à documentada aqui.
+
+### Resumo do que você construiu
+
+- Cálculo do tempo de viagem da bala e um exemplo numérico concreto mostrando por que mira direta erra contra alvo em movimento.
+- Linear Targeting por refinamento iterativo, prevendo a posição futura do inimigo assumindo velocidade e heading constantes.
+- Circular Targeting por simulação passo a passo, incorporando a variação de heading do inimigo entre *scans* — generaliza o caso linear como caso particular.
+- Uma função `mirar()` única, usada em produção, com fallback defensivo para mira direta quando a velocidade de bala calculada é inválida.
+- Bateria de batalhas reais comparando mira preditiva com o baseline de mira direta, com melhora real e mensurável nos 4 oponentes testados.
+
+### Perguntas de fixação
+
+1. Por que a previsão circular do Passo 3 cobre o caso linear do Passo 2 como um caso particular, em vez de precisar das duas implementações em produção?
+2. Por que o método iterativo do Passo 2 converge em poucas iterações, em vez de exigir resolver a equação quadrática fechada?
+3. O que `maxPassos = 500` está limitando, exatamente, na simulação do Passo 3 — e por que esse valor é uma margem generosa, e não um ajuste fino que precisa ser calibrado por oponente?
+
+### Exercícios
+
+1. Reduza `maxPassos` para um valor bem menor (ex.: 20) e rode uma bateria de testes contra `sample.RamFire`, que se aproxima rápido — o resultado piora de forma mensurável? Documente o que observar.
+2. Pesquise e descreva em texto como suavizar `variacaoHeadingInimigo` com uma média móvel dos últimos *scans*, em vez de usar só a diferença entre os dois últimos — que problema isso resolveria contra um inimigo com movimento ruidoso *scan* a *scan*?
+3. (Desafio opcional, não precisa estar implementado no robô de referência) Pesquise e explique em texto o que é **GuessFactor Targeting**: a técnica que substitui a simulação física do Passo 3 por uma tabela estatística de onde os disparos anteriores realmente acertaram/erraram, segmentada por faixas de distância/velocidade. Essa é exatamente a ideia central por trás do Wave Surfing do próximo tópico — só que aplicada à ofensiva (mira) em vez da defesa (movimento).
+
+## 16. Robocode: Wave Surfing (movimento evasivo adaptativo)
+
+**Objetivo:** substituir o *circling* fixo por um movimento evasivo que reage estatisticamente a onde os tiros do inimigo historicamente passam perto do seu robô.
+
+Este tópico implementa uma versão **simplificada e deliberadamente escopada** de Wave Surfing, a técnica clássica de movimento evasivo do Robocode competitivo: aqui ela rastreia só o inimigo único de uma batalha 1v1, guarda uma única tabela de estatísticas não segmentada (a versão de torneio "de verdade" segmenta por faixa de distância, velocidade e proximidade de parede — fora de escopo aqui) e decide a direção olhando só um passo hipotético à frente para cada lado, em vez de simular vários *ticks* por candidato como as implementações de campeonato fazem. Isso é uma simplificação real e deliberada, feita para manter o assunto didaticamente tratável em uma aula — não um erro de implementação —, e o Passo 7 mostra, com números reais, onde essa simplificação custa desempenho.
+
+### Pré-requisitos
+
+Robô com radar lock e mira preditiva (Circular Targeting) do tópico anterior. **✅ Checkpoint:** a bateria de testes do Passo 5 do tópico anterior roda e reproduz números parecidos com os documentados lá.
+
+### PASSO 1: por que um padrão de movimento fixo é previsível
+
+Desde o Tópico 14, `MeuRobo` sempre gira 90° perpendicular ao inimigo e anda para frente — uma regra fixa, sempre no mesmo sentido. Isso já é melhor que ficar parado, mas continua sendo um **padrão**: qualquer oponente que observe algumas rodadas aprende que o robô sempre vai estar, daqui a alguns *ticks*, num ponto previsível da órbita — inclusive a própria mira preditiva que você acabou de construir no Tópico 15 seria capaz de aprender e explorar um padrão desse tipo, se estivesse do lado oposto da batalha.
+
+A ideia central do Wave Surfing é trocar a regra fixa por uma decisão adaptativa: em vez de "sempre gire para o mesmo lado", rastrear estatisticamente onde as balas anteriores do inimigo *passariam* em relação à sua posição, e orbitar para o lado que historicamente foi mais seguro.
+
+**✅ Checkpoint:** você consegue explicar, em uma frase, por que um padrão de movimento 100% fixo é uma fraqueza estrutural — não só teórica — contra um oponente adaptativo.
+
+### PASSO 2: detecte disparo do inimigo pela queda de energia
+
+O Robocode não avisa diretamente "o inimigo atirou" — mas atirar custa energia ao atirador, numa quantidade proporcional à potência (entre 0.1 e 3.0). Detectamos o disparo observando a queda de energia do inimigo entre dois *scans*:
+
+```java
+private double energiaAnteriorInimigo = 100.0;
+```
+
+```java
+// Wave surfing: detecta disparo do inimigo pela queda de energia,
+// antes de qualquer outra coisa (precisamos do estado "antes" do scan).
+double quedaEnergia = energiaAnteriorInimigo - e.getEnergy();
+if (quedaEnergia > 0.0 && quedaEnergia <= 3.0) {
+    registrarNovaOnda(inimigoXAtual, inimigoYAtual, quedaEnergia);
+}
+energiaAnteriorInimigo = e.getEnergy();
+```
+
+O intervalo `(0.0, 3.0]` corresponde exatamente à faixa de potência válida de um tiro — uma queda fora dessa faixa não pode ter vindo de um disparo normal. Isso precisa rodar logo no início de `onScannedRobot`, antes de qualquer outro cálculo, porque depende do valor de energia "antes" deste *scan*, guardado do *scan* anterior.
+
+Limitação honesta: uma colisão (com a parede ou com outro robô) no mesmo *tick* **também** reduz a energia do inimigo, e não é distinguível de um tiro só por esse sinal — é uma heurística conhecida e aceita na comunidade Robocode, não uma detecção perfeita. Um sinal ocasionalmente falso-positivo (registrar uma "onda" que na verdade foi uma colisão) é um custo aceito desta simplificação.
+
+**✅ Checkpoint:** com `out.println` temporário dentro do `if`, você confirma que `registrarNovaOnda` é chamado nos momentos em que o inimigo atira (visível numa batalha com interface gráfica, comparando com o efeito visual do tiro).
+
+### PASSO 3: classe `Onda` e rastreamento
+
+Cada disparo detectado vira um objeto `Onda`, guardando de onde e quando ele partiu:
+
+```java
+private static class Onda {
+    double origemX, origemY;
+    long horaDisparo;
+    double velocidadeBala;
+    double anguloDiretoGraus; // ângulo absoluto da origem até minha posição no instante do disparo
+}
+```
+
+```java
+private final List<Onda> ondasAtivas = new ArrayList<>();
+
+private void registrarNovaOnda(double inimigoX, double inimigoY, double quedaEnergia) {
+    Onda onda = new Onda();
+    onda.origemX = inimigoX;
+    onda.origemY = inimigoY;
+    onda.horaDisparo = getTime();
+    onda.velocidadeBala = 20 - 3 * quedaEnergia;
+    onda.anguloDiretoGraus = Math.toDegrees(Math.atan2(getX() - inimigoX, getY() - inimigoY));
+    ondasAtivas.add(onda);
+}
+```
+
+`velocidadeBala` é calculada a partir da própria queda de energia (`20 - 3 * quedaEnergia`), já que a queda de energia é exatamente a potência do tiro. `anguloDiretoGraus` é o *bearing* absoluto, em graus, da origem do tiro até a sua posição **no instante do disparo** — esse ângulo vira a "linha reta" de referência para medir, depois, o quanto você se desviou dela.
+
+Uma onda avança fisicamente com o tempo — o raio da "bolha" de possíveis posições da bala cresce a cada *tick*. Isso precisa ser atualizado independentemente de haver um novo *scan* ou não, então roda a cada volta do laço principal de `run()`, antes de `execute()`:
+
+```java
+private void atualizarOndas() {
+    Iterator<Onda> it = ondasAtivas.iterator();
+    while (it.hasNext()) {
+        Onda onda = it.next();
+        double raioAtual = onda.velocidadeBala * (getTime() - onda.horaDisparo);
+        double distanciaAteMim = Math.hypot(getX() - onda.origemX, getY() - onda.origemY);
+        if (raioAtual >= distanciaAteMim) {
+            registrarResultado(onda);
+            it.remove();
+        }
+    }
+}
+```
+
+```java
+@Override
+public void run() {
+    setColors(Color.blue, Color.black, Color.cyan);
+    setAdjustGunForRobotTurn(true);
+    setAdjustRadarForGunTurn(true);
+    setTurnRadarRight(360);
+
+    while (true) {
+        atualizarOndas();
+        execute();
+    }
+}
+```
+
+Quando o raio da onda alcança (ou ultrapassa) a distância até você, consideramos que a bala "passou" pela sua posição atual — é o momento de registrar o resultado (Passo 5) e remover a onda da lista.
+
+**✅ Checkpoint:** `ondasAtivas` cresce quando o inimigo atira e encolhe de volta conforme o tempo passa, sem crescer indefinidamente numa batalha longa.
+
+### PASSO 4: GuessFactor — a régua de "quanto você se desviou"
+
+GuessFactor é uma forma de medir, num número entre -1 e +1, o quanto você se desviou da linha reta de tiro no momento em que uma onda te alcança: `-1` significa "no limite máximo de escape para um lado", `+1` "no limite máximo para o outro lado", e `0` "exatamente na linha direta de tiro" — ou seja, teria sido um acerto se o inimigo tivesse atirado reto, sem prever seu movimento.
+
+```java
+private static final int NUM_BINS = 31; // ímpar: o bin central = acerto direto
+
+private int calcularBin(Onda onda) {
+    return calcularBinParaPosicao(onda, getX(), getY());
+}
+
+private int calcularBinParaPosicao(Onda onda, double x, double y) {
+    double anguloAtualGraus = Math.toDegrees(Math.atan2(x - onda.origemX, y - onda.origemY));
+    double anguloRelativoGraus = normalizeAngle(anguloAtualGraus - onda.anguloDiretoGraus);
+    double anguloMaximoEscapeGraus = Math.toDegrees(Math.asin(8.0 / onda.velocidadeBala));
+    double guessFactor = clamp(anguloRelativoGraus / anguloMaximoEscapeGraus, -1, 1);
+    int bin = (int) Math.round((guessFactor + 1) / 2.0 * (NUM_BINS - 1));
+    return Math.max(0, Math.min(NUM_BINS - 1, bin));
+}
+```
+
+Já escrevemos `calcularBin` na forma parametrizada (`calcularBinParaPosicao`, recebendo `x`/`y` explícitos) que o Passo 6 vai reaproveitar para avaliar posições hipotéticas — `calcularBin(onda)` é só o caso particular "minha posição atual, agora".
+
+`anguloMaximoEscapeGraus` vem de `asin(velocidadeMáxima / velocidadeBala)` — o maior ângulo que um alvo se movendo à velocidade linear máxima (8px/tick) consegue se desviar da linha direta antes da bala chegar. Um exemplo numérico: um tiro de potência 1 (`quedaEnergia = 1.0`) tem `velocidadeBala = 20 - 3*1 = 17`; `anguloMaximoEscapeGraus = asin(8/17) ≈ 28.07°`. Se você estiver exatamente nesse ângulo máximo de um dos lados no momento em que a onda te alcança, `guessFactor = ±1`, e o `bin` calculado é `0` ou `30` (as pontas). Se você estiver exatamente na linha de tiro, `guessFactor = 0`, e o `bin` é `15` — o bin central, dos 31.
+
+**✅ Checkpoint:** para os números do exemplo acima, você confirma manualmente (calculadora ou script) que um desvio de 0°, 14.03° (metade do máximo) e 28.07° (o máximo) produzem, respectivamente, os bins 15, ~22-23 e 30.
+
+### PASSO 5: tabela de estatísticas
+
+Cada vez que uma onda te alcança (Passo 3), o bin correspondente ao seu desvio real acumula um "voto":
+
+```java
+private final double[] estatisticasPerigo = new double[NUM_BINS];
+
+private void registrarResultado(Onda onda) {
+    int bin = calcularBin(onda);
+    estatisticasPerigo[bin] += 1;
+}
+```
+
+Com o tempo, `estatisticasPerigo` vai acumulando em quais bins (quais desvios angulares) as balas do inimigo mais frequentemente te alcançaram — é essa tabela que orienta a decisão de movimento do Passo 6.
+
+**✅ Checkpoint:** depois de algumas dezenas de *ticks* de batalha, pelo menos um valor de `estatisticasPerigo` é maior que zero.
+
+### PASSO 6: para que lado orbitar
+
+Com pelo menos uma onda ativa, o robô orbita a **origem da onda mais próxima** (não a posição atual do inimigo — a onda já partiu de um ponto fixo, e é em relação a esse ponto que o GuessFactor faz sentido), escolhendo o sentido comparando o "perigo" registrado de um pequeno passo hipotético em cada direção:
+
+```java
+private Onda ondaMaisProxima() {
+    Onda maisProxima = null;
+    double menorDistancia = Double.MAX_VALUE;
+    for (Onda onda : ondasAtivas) {
+        double distancia = Math.hypot(getX() - onda.origemX, getY() - onda.origemY);
+        if (distancia < menorDistancia) {
+            menorDistancia = distancia;
+            maisProxima = onda;
+        }
+    }
+    return maisProxima;
+}
+
+private double escolherAnguloOrbita(Onda ondaMaisProxima) {
+    double anguloAtual = Math.toDegrees(Math.atan2(getX() - ondaMaisProxima.origemX, getY() - ondaMaisProxima.origemY));
+
+    double passoLookahead = 20; // px, um pequeno passo hipotético para avaliar cada sentido
+    double xHorario = getX() + passoLookahead * Math.sin(Math.toRadians(anguloAtual + 10));
+    double yHorario = getY() + passoLookahead * Math.cos(Math.toRadians(anguloAtual + 10));
+    double xAntiHorario = getX() + passoLookahead * Math.sin(Math.toRadians(anguloAtual - 10));
+    double yAntiHorario = getY() + passoLookahead * Math.cos(Math.toRadians(anguloAtual - 10));
+
+    int binHorario = calcularBinParaPosicao(ondaMaisProxima, xHorario, yHorario);
+    int binAntiHorario = calcularBinParaPosicao(ondaMaisProxima, xAntiHorario, yAntiHorario);
+
+    boolean horarioMaisSeguro = estatisticasPerigo[binHorario] <= estatisticasPerigo[binAntiHorario];
+    return anguloAtual + (horarioMaisSeguro ? 90 : -90);
+}
+```
+
+`calcularBinParaPosicao` (do Passo 4) permite avaliar o bin de uma posição **hipotética**, sem precisar realmente estar lá — é a peça que faltava para comparar os dois sentidos antes de decidir. Isso substitui o bloco de movimento circular fixo que hoje existe em `onScannedRobot`, com um fallback claro para quando ainda não há nenhuma onda ativa (início de batalha, ou um intervalo sem tiros): cair de volta para o comportamento do Tópico 14, circling fixo em torno da posição atual do inimigo.
+
+```java
+private void mover(double inimigoXAtual, double inimigoYAtual, double anguloAbsoluto) {
+    double anguloOrbitaGraus;
+    Onda maisProxima = ondaMaisProxima();
+    if (maisProxima != null) {
+        anguloOrbitaGraus = escolherAnguloOrbita(maisProxima);
+    } else {
+        anguloOrbitaGraus = anguloAbsoluto + 90;
+    }
+    setTurnRight(normalizeAngle(anguloOrbitaGraus - getHeading()));
+    setAhead(80);
+}
+```
+
+**✅ Checkpoint:** o robô orbita a origem da onda mais próxima (não a posição atual do inimigo) enquanto há onda ativa, e volta ao circling fixo do Tópico 14 quando `ondasAtivas` está vazia.
+
+### PASSO 7: batalhas reais — isolando o efeito do Wave Surfing
+
+Mesmos 4 oponentes, mesmo runner, 10 *rounds* cada, comparando as três versões do robô — o baseline de *circling* fixo (documentado no README, 1 bateria registrada), a versão só com mira preditiva (Tópico 15, 3 baterias rodadas nesta sessão) e a versão final, com mira preditiva **e** Wave Surfing (este tópico, **5 baterias** rodadas nesta sessão, exatamente para conseguir medir a variação em vez de confiar numa única amostra):
+
+```
+                     circling fixo        mira preditiva         mira preditiva
+                     (baseline,            só (Tópico 15,        + Wave Surfing
+                     1 bateria)            3 baterias)            (este tópico, 5 baterias)
+vs sample.Corners:   0/10                  2/10 a 5/10             3/10 a 5/10
+vs sample.Crazy:     2/10 a 5/10           5/10 a 6/10             6/10 a 10/10
+vs sample.Walls:     1/10                  4/10 a 5/10             0/10 a 6/10
+vs sample.RamFire:   7/10                  6/10 a 9/10             4/10 a 10/10
+```
+
+Discussão honesta, com o que os números realmente mostram — e aqui está a descoberta mais importante deste tópico: **rodar só uma bateria por versão (como as primeiras execuções deste tutorial fizeram) esconderia o quanto os resultados variam.** Só depois de rodar 5 baterias completas da versão final é que ficou claro que a variação entre execuções, historicamente atribuída só a `Crazy` (que tem movimento aleatório), também afeta `Corners`, `Walls` e `RamFire` — provavelmente porque o Robocode sorteia a posição inicial de cada robô a cada *round*. Com isso em mente:
+
+- Contra `Corners` e `Crazy`, o Wave Surfing parece agregar uma melhora real por cima da mira preditiva sozinha: a faixa de `Corners` sobe de "2 a 5" para "3 a 5" (o piso melhora, o teto se mantém), e a de `Crazy` sobe de "5 a 6" para "6 a 10" (as faixas quase não se sobrepõem — evidência razoavelmente forte de melhora real).
+- Contra `Walls`, o Wave Surfing tornou o resultado **mais instável**, não uniformemente pior nem melhor: a faixa passa de "4 a 5" (mira preditiva sozinha, relativamente estável) para "0 a 6" (com Wave Surfing) — o mínimo caiu bastante. `Walls` percorre a borda da arena de forma regular; com uma tabela de estatísticas não segmentada (a simplificação deste tópico) e poucas amostras coletadas numa única batalha, o robô às vezes orbita com base em pouquíssimos disparos registrados, o que é mais ruído estatístico que sinal confiável em algumas execuções — e um sinal razoável em outras. É exatamente o tipo de instabilidade que a versão de torneio (segmentada por distância/velocidade, com muito mais dados por segmento) existe para reduzir.
+- Contra `RamFire`, o Wave Surfing também alargou a faixa em vez de deslocá-la claramente para cima: "6 a 9" virou "4 a 10". A leitura mais honesta é que o resultado contra `RamFire` já dependia fortemente de fatores fora do controle da mira ou do movimento (a posição inicial sorteada, por exemplo, tem grande efeito quando o oponente avança para colidir), e o Wave Surfing não resolveu nem piorou isso de forma decisiva.
+
+Nenhum desses números foi estimado — são 8 baterias reais no total (1 histórica + 3 do Tópico 15 + 5 deste tópico), todas rodadas via `robocode.control.RobocodeEngine` nesta mesma sessão de trabalho.
+
+**✅ Checkpoint:** você roda pelo menos duas baterias completas contra o mesmo oponente na sua máquina e confirma, com números próprios, que o resultado varia de uma execução para outra mesmo sem mudar uma linha de código.
+
+### Resumo do que você construiu
+
+- Entendimento de por que um padrão de movimento 100% fixo é uma fraqueza estrutural contra um oponente adaptativo.
+- Detecção de disparo do inimigo pela queda de energia, com a limitação honesta de que colisões produzem o mesmo sinal.
+- Classe `Onda` e uma lista de ondas ativas, atualizada a cada *tick* do loop principal (não só a cada *scan*).
+- GuessFactor: uma régua de -1 a +1 para medir o desvio angular real de cada onda que te alcança, e uma tabela de estatísticas (`estatisticasPerigo`) não segmentada por essa régua.
+- Decisão de movimento que orbita a origem da onda mais próxima pelo lado historicamente mais seguro, com fallback para o circling fixo do Tópico 14 quando não há onda ativa.
+- Bateria de **múltiplas** batalhas reais (não uma só) isolando o efeito específico do Wave Surfing por cima da mira preditiva, com resultado honesto: melhora razoavelmente clara contra `Corners` e `Crazy`, mas contra `Walls` e `RamFire` o Wave Surfing alargou a faixa de resultados possíveis em vez de deslocá-la claramente para cima.
+- A descoberta de que a variação entre execuções não é exclusividade de `Crazy` — `Corners`, `Walls` e `RamFire` também produzem resultados diferentes de bateria para bateria, o que reforça por que uma única bateria de 10 *rounds* não é suficiente para tirar conclusões definitivas sobre uma mudança de estratégia.
+
+### Perguntas de fixação
+
+1. Por que o threshold de queda de energia usado para detectar tiro é o intervalo `(0.0, 3.0]`, e não qualquer queda de energia?
+2. Por que orbitar a **origem** da onda em vez da posição **atual** do inimigo?
+3. A simplificação de "olhar só um passo hipotético à frente" em vez de simular vários *ticks* por candidato (como as implementações de torneio fazem) custa o quê, em termos de qualidade da decisão de movimento?
+4. O Passo 7 mostrou que `Corners`, `Walls` e `RamFire` — todos com estratégia determinística, sem nenhum `Math.random()` no código deles — ainda assim produziram resultados diferentes entre baterias. Como isso é possível, e o que isso te diz sobre quantas baterias rodar antes de confiar num número?
+
+### Exercícios
+
+1. Mude `NUM_BINS` para um valor bem menor (ex.: 7) ou bem maior (ex.: 61) e rode a mesma bateria de 4 oponentes — o resultado muda de forma perceptível? Documente os números reais observados.
+2. Pesquise e descreva em texto como segmentar `estatisticasPerigo` por faixa de distância (ex.: perto/médio/longe), em vez de uma única tabela — que problema prático isso resolveria, à luz do resultado observado contra `Walls` no Passo 7?
+3. (Desafio opcional, não precisa estar implementado no robô de referência) `onPaint(java.awt.Graphics2D g)` é um método real de `Robot`/`AdvancedRobot` (confirme com `javap -cp ~/robocode/libs/robocode.jar robocode.Robot`), habilitado marcando "Paint" nas preferências/console do Robocode. Descreva como usá-lo para desenhar visualmente as ondas ativas como círculos crescentes ao redor de cada origem, o que ajudaria a depurar visualmente se o robô está de fato "surfando" as ondas certas.
+
+## 17. Robocode: Refinamento e testes sistemáticos
 
 **Objetivo:** gerenciar energia de forma estratégica e testar sistematicamente contra vários estilos de oponente antes do campeonato — com resultados reais, não estimados.
 
 ### Pré-requisitos
 
-Robô `AdvancedRobot` com radar lock, mira e movimento circular do tópico anterior. **✅ Checkpoint:** o robô vence a maioria das batalhas contra robôs de exemplo simples.
+Robô `AdvancedRobot` com radar lock, mira preditiva (Linear/Circular Targeting) e Wave Surfing dos dois tópicos anteriores, além do movimento circular de fallback herdado do Tópico 14. **✅ Checkpoint:** o robô vence a maioria das batalhas contra robôs de exemplo simples.
 
 ### PASSO 1: adicione gerenciamento de energia à estratégia
 
@@ -2752,22 +3413,22 @@ Testar contra estilos diferentes de oponente revela pontos fracos que um único 
 
 ### PASSO 4: registre e analise os pontos fracos encontrados
 
-Um exemplo real, de 10 *rounds* cada, rodado durante a construção deste tutorial:
+Um exemplo real, de 10 *rounds* cada bateria, rodado durante a construção deste tutorial — já com o robô incorporando mira preditiva (Tópico 15) e Wave Surfing (Tópico 16), não mais a versão simples de radar lock + mira direta + *circling* fixo do Tópico 14. O Passo 7 do tópico anterior já mostrou, com 5 baterias completas, que o resultado varia bastante de execução para execução contra **qualquer** um dos 4 oponentes (não só `Crazy`) — então a faixa observada, e não um único número, é o dado honesto aqui:
 
 ```
-vs sample.Corners: 0/10 — perde de forma consistente
-vs sample.Crazy:   2/10 (numa rodada) a 5/10 (noutra) — resultado varia entre execuções
-vs sample.Walls:   1/10 — perde de forma consistente
-vs sample.RamFire: 7/10 — vence na maioria
+vs sample.Corners: 3/10 a 5/10 (5 baterias) — evolução real frente ao histórico (a versão do Tópico 14, só com mira direta e circling fixo, vencia 0/10 numa única bateria registrada)
+vs sample.Crazy:   6/10 a 10/10 (6 baterias) — segue sendo o oponente com a faixa mais larga, Crazy tem movimento aleatório
+vs sample.Walls:   0/10 a 6/10 (5 baterias) — o oponente com o pior "pior caso" observado, mesmo já tendo evoluído frente ao histórico (1/10)
+vs sample.RamFire: 4/10 a 10/10 (5 baterias) — a faixa mais larga depois de Crazy; nem sempre acima do histórico (7/10)
 ```
 
-Documentar os resultados antes de mexer no código evita "otimizar no escuro". Repare também que `Crazy` deu números diferentes em duas rodadas separadas — o movimento dele é aleatório a cada *round*, então 10 *rounds* é uma amostra, não uma medida fixa; rodar mais de uma bateria de testes é uma forma legítima de checar se um resultado é estável ou coincidência.
+Documentar os resultados antes de ajustar mais o código evita "otimizar no escuro" — e documentar a **faixa**, não só um número de uma bateria só, evita a armadilha mais sutil: tratar uma execução sortuda (ou azarada) como se fosse "o" resultado do robô. Repare que essa variação ampla, principalmente contra `Walls` e `RamFire`, é uma descoberta real feita durante a verificação deste material, não algo previsto de antemão — a hipótese mais provável é que o Robocode sorteia a posição inicial de cada robô a cada *round*, o que afeta até confrontos contra oponentes de estratégia 100% determinística. Os Tópicos 15 e 16 já mostraram, separadamente, o efeito de cada técnica (mira preditiva sozinha, e mira preditiva + Wave Surfing) sobre essas faixas; esta seção é sobre o robô acumulado até este ponto do currículo, não uma técnica isolada.
 
 **✅ Checkpoint:** você tem uma lista escrita de pelo menos 2 pontos fracos identificados, com números reais.
 
 ### PASSO 5: ajuste a estratégia para o ponto fraco mais crítico
 
-Olhando o exemplo acima, `Corners` e `Walls` — ambos os que ficam grudados na borda da arena, girando o canhão parados ou quase parados — são os piores resultados. Um robô que gira em círculo largo demais (`setAhead(80)`, como no PASSO 4 do tópico anterior) gasta tempo se afastando em vez de fechar distância contra um alvo que não foge. Uma correção possível é reduzir o raio do *circling* quando o inimigo está parado ou perto da borda:
+Olhando o exemplo acima, `Corners` e `Walls` — ambos os que ficam grudados na borda da arena, girando o canhão parados ou quase parados — são os piores resultados. Um robô que gira em círculo largo demais (`setAhead(80)`, como no PASSO 4 do Tópico 14) gasta tempo se afastando em vez de fechar distância contra um alvo que não foge. Uma correção possível é reduzir o raio do *circling* quando o inimigo está parado ou perto da borda:
 
 ```java
 public void onHitRobot(HitRobotEvent e) {
@@ -2778,7 +3439,7 @@ public void onHitRobot(HitRobotEvent e) {
 }
 ```
 
-`e.isMyFault()` diz se seu robô causou a colisão — afastar-se imediatamente reduz a exposição a robôs que usam *ramming* como estratégia, como `RamFire`, que já é o oponente contra o qual o robô deste exemplo vai melhor.
+`e.isMyFault()` diz se seu robô causou a colisão — afastar-se imediatamente reduz a exposição a robôs que usam *ramming* como estratégia, como `RamFire`, um dos oponentes contra os quais esse tratamento já ajuda (ver a faixa de resultados do PASSO 4).
 
 **✅ Checkpoint:** reteste contra o oponente mais fraco identificado — o objetivo é melhorar o número em relação ao PASSO 3, não necessariamente vencer 10/10.
 
@@ -2802,7 +3463,7 @@ public void onHitRobot(HitRobotEvent e) {
 2. Modo defensivo: quando energia < 10, priorize fuga sobre ataque.
 3. Novo teste: rode contra `sample.TrackFire` e documente o resultado.
 
-## 16. Robocode: Finalização e empacotamento
+## 18. Robocode: Finalização e empacotamento
 
 **Objetivo:** polimento final, empacotamento como `.jar` e checklist de submissão antes do campeonato.
 

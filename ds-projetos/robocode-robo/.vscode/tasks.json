@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Robocode: batalha rápida contra oponente à escolha",
+      "type": "shell",
+      "command": "${workspaceFolder}/tools/rodar-batalha-vscode.sh",
+      "args": ["${input:oponente}"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-ExecutionPolicy", "Bypass",
+          "-File", "${workspaceFolder}\\tools\\rodar-batalha-vscode.ps1",
+          "${input:oponente}"
+        ]
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "oponente",
+      "type": "pickString",
+      "description": "Escolha o robô de exemplo para MeuRobo enfrentar",
+      "options": [
+        { "label": "SittingDuck — o mais simples, parado (bom primeiro teste)", "value": "sample.SittingDuck" },
+        { "label": "Corners — foge para o canto e atira parado", "value": "sample.Corners" },
+        { "label": "Crazy — se move de forma errática (resultado varia bastante entre execuções)", "value": "sample.Crazy" },
+        { "label": "Walls — percorre a borda da arena", "value": "sample.Walls" },
+        { "label": "RamFire — tenta colidir de propósito", "value": "sample.RamFire" },
+        { "label": "TrackFire — oponente do exercício do Tópico 17", "value": "sample.TrackFire" }
+      ],
+      "default": "sample.SittingDuck"
+    }
+  ]
+}
