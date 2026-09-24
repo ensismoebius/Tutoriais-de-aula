@@ -2892,23 +2892,3 @@ jar cf meurobo.jar meurobo/MeuRoboFinal.class meurobo/MeuRoboFinal.properties
 1. Por que usar `out` em vez de `System.out` dentro de um robô Robocode?
 2. O que acontece com o robô, na prática, se `onScannedRobot` lançar uma exceção não tratada no meio de uma batalha?
 3. O `.jar` gerado contém o quê, exatamente, além do `.class` compilado?
-
-## 17. Robocode: Campeonato
-
-### Apresentação dos robôs
-
-Antes das batalhas eliminatórias, cada aluno apresenta a estratégia do seu robô — 3 minutos, sem demo ao vivo (a demo acontece nas batalhas). Roteiro sugerido: nome e inspiração (30s); movimento — parado, *circling*, evasivo aleatório, e por quê (1 min); mira/tiro — como o robô decide quando e com que potência atirar (1 min); ponto forte e ponto fraco conhecido (30s) — honestidade aqui vale mais que parecer perfeito, e os dados reais do Tópico 15 dão material concreto para essa parte.
-
-Checklist antes de apresentar: o `.jar` final está pronto e testado; você sabe explicar sua estratégia em linguagem simples, sem precisar mostrar código; você conhece pelo menos um ponto fraco do seu próprio robô.
-
-### Final e premiação
-
-Chaveamento eliminatório simples (mata-mata). Cada confronto: melhor de 3 *rounds*. Todos os `.jar` finalizados no tópico de Finalização competem. Estrutura sugerida: chaveamento sorteado no início da aula, exibido para a turma; confrontos individuais, 3 *rounds* cada, projetados na tela; semifinais e final ao vivo, com comentário sobre as estratégias em ação; premiação simbólica para 1º, 2º e 3º lugar, e uma menção honrosa para "estratégia mais criativa".
-
-O que observar durante as batalhas, para discussão em grupo depois: quais estratégias de movimento (parado, *circling*, evasivo) se saíram melhor contra quais tipos de oponente? Radar lock fez diferença perceptível nos confrontos observados? Algum robô com estratégia simples venceu um robô mais complexo? Por quê?
-
-Ao final, cada aluno escreve 3-5 linhas respondendo: o que você mudaria na estratégia do seu robô, sabendo o que sabe agora? Qual conceito de POO (herança, polimorfismo, encapsulamento) foi mais útil ao programar o robô?
-
----
-
-Uma implementação de referência completa de `MeuRobo` — incluindo os resultados reais de batalhas de teste contra os quatro robôs de exemplo — está disponível em `ds-projetos/robocode-robo/`.
